@@ -1,4 +1,4 @@
-"""Real Agno 2.3.21 Workflow adapter. Importing this file makes no network calls."""
+"""Agno 3.2.0 Workflow adapter. Importing this file makes no network calls."""
 from __future__ import annotations
 import ast
 import json
@@ -74,7 +74,7 @@ def verify_citations(result: dict, sources: list[dict]) -> list[dict]:
     return checked
 
 
-def run_agno(capability: str, inputs: dict, emit: Callable[[str, dict], None]) -> dict:
+def run_agno(capability: str, inputs: dict, emit: Callable[[str, dict], None], *, research_checkpoint=None) -> dict:
     """Run real agents inside real Agno Workflow function steps.
 
     emit is synchronous and must persist events. Provider secrets and model IDs
@@ -85,11 +85,33 @@ def run_agno(capability: str, inputs: dict, emit: Callable[[str, dict], None]) -
     try:
         from agno.agent import Agent
         from agno.models.openai import OpenAIChat
-        from agno.workflow import Workflow, Step, StepInput, StepOutput, Loop
+        from agno.workflow import Workflow, Step, StepInput, StepOutput, Loop, HumanReview
     except ImportError as exc:
-        raise RuntimeError('Install backend requirements including agno==2.3.21 and openai') from exc
+        raise RuntimeError('Install backend requirements including agno==3.2.0 and openai') from exc
+    if research_checkpoint is not None and (capability != 'research' or not inputs.get('confirmed_outline')):
+        raise ValueError('Only confirmed research supports checkpoint resume')
+    checkpoint_state = research_checkpoint.load() if research_checkpoint is not None else None
     sources = list(inputs.get('sources', []))
     original_source_ids = {s['id'] for s in sources}
+    reusable_branches = {}
+    if checkpoint_state:
+        from .research_workflow import _normalize_evidence
+        for name, record in checkpoint_state['branches'].items():
+            if record.get('status') not in ('completed', 'partial') or not (record.get('evidence') or {}).get('citations'):
+                continue
+            # Revalidate persisted provenance before it can enter a new prompt.
+            evidence = _normalize_evidence(record['evidence'])
+            available = sources + record.get('sources', [])
+            evidence['citations'] = verify_citations(evidence, available)
+            existing = {str(s['id']): s for s in sources}
+            for source in record.get('sources', []):
+                prior = existing.get(str(source['id']))
+                if prior is not None and any(prior.get(k) != source.get(k) for k in ('text', 'page', 'start_seconds', 'end_seconds')):
+                    raise ValueError('Checkpoint source conflicts with current research sources')
+                if prior is None:
+                    sources.append(source)
+                    existing[str(source['id'])] = source
+            reusable_branches[name] = record
     if len({str(s['id']) for s in sources}) != len(sources):
         raise ValueError('Source IDs must be unique')
     selected = ['local_search' if t == 'source_search' else t for t in inputs.get('tools', ['source_search', 'calculator'])]
@@ -226,16 +248,29 @@ def run_agno(capability: str, inputs: dict, emit: Callable[[str, dict], None]) -
         solve_tools = make_solve_tools(solve_state, emit)
         solve_names = [f.__name__ for f in solve_tools]
         tools.update(zip(solve_names, solve_tools))
-    def model_for_stage():
-        return OpenAIChat(id=os.getenv('AGNO_MODEL', 'gpt-4.1-mini'),
-                          base_url=os.getenv('OPENAI_BASE_URL') or None, timeout=45)
+    def model_for_stage(name, with_tools):
+        model_id = os.getenv('AGNO_MODEL', 'gpt-4.1-mini')
+        base_url = os.getenv('OPENAI_BASE_URL') or None
+        use_deep_responses = (os.getenv('AGNO_DEEP_RESPONSES') == '1' and
+                              ((capability == 'solve' and name == 'answer') or
+                               (capability == 'research' and name.startswith('research_evidence_'))))
+        if use_deep_responses:
+            from agno.models.openai import OpenAIResponses
+            if model_id != 'gpt-6-luna':
+                raise ValueError('Deep Responses is currently validated only for gpt-6-luna')
+            return OpenAIResponses(id=model_id, base_url=base_url, timeout=45, max_retries=0,
+                                   reasoning_effort='high', max_output_tokens=3000,
+                                   store=False, use_previous_response_id=False, parallel_tool_calls=False)
+        # Chat Completions cannot combine Luna function tools with reasoning.
+        options = {'reasoning_effort': 'none'} if with_tools and model_id == 'gpt-6-luna' else {}
+        return OpenAIChat(id=model_id, base_url=base_url, timeout=45, **options)
     def ask_model(name, instructions, schema, packet, enabled_tools=None):
         active = list(selected if enabled_tools is None else enabled_tools)
         if solve_state is not None and name == 'answer':
             active.extend(solve_names)
         if capability == 'visualize' and name == 'answer':
             active.append('submit_visualization')
-        agent = Agent(name=name, model=model_for_stage(), instructions=common + instructions,
+        agent = Agent(name=name, model=model_for_stage(name,bool(active)), instructions=common + instructions,
                       tools=[tools[n] for n in active], output_schema=schema,
                       tool_call_limit=24 if solve_state is not None and name == 'answer' else 8,
                       use_json_mode=True, telemetry=False)
@@ -243,28 +278,44 @@ def run_agno(capability: str, inputs: dict, emit: Callable[[str, dict], None]) -
         if not isinstance(value, schema):
             value = schema.model_validate_json(value) if isinstance(value, str) else schema.model_validate(value)
         return value
+    def strict_step(name, executor):
+        # Agno 3 defaults workflow-level errors to skip. Do not run downstream
+        # model or rendering steps if a prerequisite step actually failed.
+        return Step(name=name, executor=executor, max_retries=0,
+                    human_review=HumanReview(on_error='fail'))
     def execute_stage(name: str, instructions: str, schema):
         def executor(step_input: StepInput) -> StepOutput:
             emit('step.started', {'name': name, 'engine': 'agno'})
             packet = context
+            if capability == 'research':
+                with source_lock:
+                    packet = {**context, 'request': {**inputs, 'sources': list(sources)}}
             if name == 'review' and capability == 'visualize':
                 packet = {**context, 'accepted_visualization': submitted_visual}
             if name == 'answer' and capability == 'solve':
                 # Expose the previous review as explicit feedback on retry.
                 feedback = context['outputs'].pop('review', None)
                 packet = {**context, 'retry_feedback': feedback, 'solve_state': solve_state.snapshot()}
-            value = ask_model(name, instructions, schema, packet)
+            if name == 'plan' and checkpoint_state and checkpoint_state['plan'] is not None:
+                value = schema.model_validate(checkpoint_state['plan'])
+                emit('research.checkpoint.reused', {'name': 'plan'})
+            else:
+                value = ask_model(name, instructions, schema, packet)
+                if name == 'plan' and research_checkpoint is not None:
+                    research_checkpoint.save_plan(value.model_dump())
             context['outputs'][name] = value.model_dump()
             emit('progress', {'step': name, 'status': 'completed'})
             return StepOutput(content=value.model_dump())
-        return Step(name=name, executor=executor, max_retries=0)
+        return strict_step(name, executor)
     stages = []
     if capability == 'research':
         from .research_workflow import research_evidence_stage
         def evidence_executor(step_input):
             emit('step.started', {'name': 'evidence', 'engine': 'agno'})
             def branch(name, task):
-                packet = {'capability': capability, 'request': {**inputs, 'branch_task': task},
+                with source_lock:
+                    branch_sources = list(sources)
+                packet = {'capability': capability, 'request': {**inputs, 'sources': branch_sources, 'branch_task': task},
                           'outputs': {'plan': context['outputs']['plan']}}
                 value = ask_model(name, 'Investigate only request.branch_task using permitted tools and sources. '
                                   'Return grounded evidence and label gaps; do not write the overall report.',
@@ -273,7 +324,13 @@ def run_agno(capability: str, inputs: dict, emit: Callable[[str, dict], None]) -
                     snapshot = list(sources)
                 value['citations'] = verify_citations(value, snapshot)
                 return value
-            report = research_evidence_stage(context, branch, emit)
+            def checkpoint_branch(record):
+                with source_lock:
+                    snapshot = list(sources)
+                research_checkpoint.save_branch(record, snapshot)
+            report = research_evidence_stage(context, branch, emit,
+                        completed_branches=reusable_branches,
+                        checkpoint_branch=checkpoint_branch if research_checkpoint is not None else None)
             context['outputs']['evidence'] = report
             if report['data']['all_failed'] or not report['citations']:
                 raise ValueError('No valid cited research evidence; report withheld')
@@ -281,7 +338,7 @@ def run_agno(capability: str, inputs: dict, emit: Callable[[str, dict], None]) -
             return StepOutput(content=report)
         stages.append(execute_stage('plan', 'Follow the confirmed outline and any outline_revision; '
                                     'split into up to six distinct scoped tasks. Do not gather evidence yet.', Plan))
-        stages.append(Step(name='evidence', executor=evidence_executor, max_retries=0))
+        stages.append(strict_step('evidence', evidence_executor))
     if capability == 'quiz':
         from .quiz_workflow import generate_quiz
         def quiz_executor(step_input):
@@ -318,7 +375,7 @@ def run_agno(capability: str, inputs: dict, emit: Callable[[str, dict], None]) -
             result = generate_quiz(targets, generate, judge, emit)
             context['outputs']['quiz'] = result
             return StepOutput(content=result)
-        workflow = Workflow(name='DeepTutor-quiz', steps=[Step(name='quiz', executor=quiz_executor, max_retries=0)],
+        workflow = Workflow(name='DeepTutor-quiz', steps=[strict_step('quiz', quiz_executor)],
                             telemetry=False)
         response = workflow.run(input=inputs.get('prompt', '') or 'Generate practice questions')
         if 'quiz' not in context['outputs']:
@@ -346,11 +403,15 @@ def run_agno(capability: str, inputs: dict, emit: Callable[[str, dict], None]) -
             emit('step.started', {'name': 'render_lesson', 'engine': 'agno'})
             emit('progress', {'step': 'render_lesson', 'percent': 75, 'message': 'Rendering lesson and subtitles'})
             draft = context['outputs']['answer']['data']
-            media = build_lesson({**draft, 'tts': inputs.get('tts', 'none')})
+            media_request = {k: v for k, v in draft.items() if k != 'animation'}
+            media_request['tts'] = inputs.get('tts', 'none')
+            if 'animation' in inputs:
+                media_request['animation'] = inputs['animation']
+            media = build_lesson(media_request)
             context['outputs']['lesson_media'] = media
             emit('step.completed', {'name': 'render_lesson', 'engine': 'agno', 'renderer': media['renderer']})
             return StepOutput(content=media)
-        stages.append(Step(name='render_lesson', executor=render_lesson, max_retries=0))
+        stages.append(strict_step('render_lesson', render_lesson))
     workflow = Workflow(name='DeepTutor-' + capability, steps=stages, telemetry=False)
     response = workflow.run(input=json.dumps({'capability': capability, 'prompt': inputs.get('prompt', '')}))
     review = context['outputs'].get('review')

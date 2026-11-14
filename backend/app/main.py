@@ -13,6 +13,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from .preview import prepare_preview, confirmed_inputs
+from .quiz_delivery import (QuizSubmissionError, capture_quiz_event, init_quiz_db,
+                            public_quiz_event, quiz_task_view, submit_quiz)
 from .core import CAPABILITIES, fake_run, verify_grounding, validate_quiz, validate_sources
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -27,6 +29,9 @@ class TaskRequest(BaseModel):
 class BlueprintRequest(BaseModel):
     sample_text: str = Field(min_length=20,max_length=60000)
 
+class QuizSubmission(BaseModel):
+    answers: dict[str,object]
+
 class ResumeRequest(BaseModel):
     answers: dict[str,str]
 
@@ -35,14 +40,38 @@ def connect():
     conn.row_factory=sqlite3.Row
     return conn
 
+def confirmed_research(task_request):
+    return (task_request.get('provider') == 'agno' and task_request.get('capability') == 'research'
+            and bool(task_request.get('inputs', {}).get('confirmed_outline')))
+
+
 def init_db():
     DB.parent.mkdir(parents=True,exist_ok=True)
     with connect() as db:
         db.executescript('CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,status TEXT,request TEXT,result TEXT,error TEXT); CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT,task_id TEXT,type TEXT,data TEXT,created_at REAL); CREATE INDEX IF NOT EXISTS events_task ON events(task_id,id);')
-        interrupted=db.execute("SELECT id FROM tasks WHERE status IN ('running','pending')").fetchall()
+        init_quiz_db(db)
+        db.execute('BEGIN IMMEDIATE')
+        interrupted=db.execute("SELECT id,request,result FROM tasks WHERE status IN ('running','pending')").fetchall()
         for row in interrupted:
+            if confirmed_research(json.loads(row['request'])):
+                db.execute("UPDATE tasks SET status='interrupted',error=NULL WHERE id=?",(row['id'],))
+                db.execute('INSERT INTO events(task_id,type,data,created_at) VALUES(?,?,?,?)',
+                           (row['id'],'research.interrupted',json.dumps({'message':'Research interrupted; resume explicitly to reuse completed evidence.'}),time.time()))
+                continue
+            prior=json.loads(row['result']) if row['result'] else {}
+            if prior.get('renderer')=='trusted-quadratic-animation':
+                retained={**prior,'fallback_used':True,'revision_status':'interrupted'}
+                db.execute("UPDATE tasks SET status='completed',result=?,error=NULL WHERE id=?",
+                           (json.dumps(retained,ensure_ascii=False),row['id']))
+                db.execute('INSERT INTO events(task_id,type,data,created_at) VALUES(?,?,?,?)',
+                           (row['id'],'result',json.dumps(retained,ensure_ascii=False),time.time()))
+                db.execute('INSERT INTO events(task_id,type,data,created_at) VALUES(?,?,?,?)',
+                           (row['id'],'run.completed',json.dumps({'status':'completed','revision_status':'interrupted','retained_previous':True}),time.time()))
+                continue
             db.execute("UPDATE tasks SET status='failed',error=? WHERE id=?",('Process restarted; create a new task to retry.',row['id']))
             db.execute('INSERT INTO events(task_id,type,data,created_at) VALUES(?,?,?,?)',(row['id'],'error',json.dumps({'message':'Worker interrupted by process restart. No automatic replay of external calls.'}),time.time()))
+            db.execute('INSERT INTO events(task_id,type,data,created_at) VALUES(?,?,?,?)',
+                       (row['id'],'run.completed',json.dumps({'status':'failed'}),time.time()))
 
 @app.on_event('startup')
 def startup(): init_db()
@@ -52,8 +81,30 @@ def get_task(task_id):
     if row is None: raise HTTPException(404,'Unknown task')
     return dict(row)
 
+def insert_event(db,task_id,kind,data):
+    row=db.execute('SELECT request FROM tasks WHERE id=?',(task_id,)).fetchone()
+    if row and json.loads(row['request']).get('capability')=='quiz':
+        data=capture_quiz_event(db,task_id,kind,data)
+    db.execute('INSERT INTO events(task_id,type,data,created_at) VALUES(?,?,?,?)',
+               (task_id,kind,json.dumps(data,ensure_ascii=False),time.time()))
+
+
 def event(task_id,kind,data):
-    with LOCK,connect() as db: db.execute('INSERT INTO events(task_id,type,data,created_at) VALUES(?,?,?,?)',(task_id,kind,json.dumps(data,ensure_ascii=False),time.time()))
+    with LOCK,connect() as db:
+        insert_event(db,task_id,kind,data)
+
+
+def finish_task(task_id,value,result=None,error=None,completion=None):
+    """Make the terminal state and its SSE frames visible in the same transaction."""
+    with LOCK,connect() as db:
+        if result is not None:
+            insert_event(db,task_id,'result',result)
+        if error:
+            insert_event(db,task_id,'error',{'message':error})
+        insert_event(db,task_id,'run.completed',{'status':value,**(completion or {})})
+        db.execute('UPDATE tasks SET status=?,result=?,error=? WHERE id=?',
+                   (value,json.dumps(result,ensure_ascii=False) if result is not None else None,error,task_id))
+
 
 def status(task_id,value,result=None,error=None):
     with LOCK,connect() as db: db.execute('UPDATE tasks SET status=?,result=?,error=? WHERE id=?',(value,json.dumps(result,ensure_ascii=False) if result is not None else None,error,task_id))
@@ -72,10 +123,19 @@ def execute(task_id):
             return
         emit('progress',{'percent':10,'message':'Validating inputs and preparing workflow'})
         validate_sources(inputs.get('sources',[]))
-        if request['provider']=='fake': result=fake_run(capability,inputs,emit)
+        if capability=='video_lesson' and request['provider']=='fake' and 'animation' in inputs:
+            from .media import build_lesson
+            emit('step.started',{'name':'render_trusted_animation'})
+            result=build_lesson({'animation':inputs['animation'],'tts':inputs.get('tts','none')})
+            emit('step.completed',{'name':'render_trusted_animation'})
+        elif request['provider']=='fake': result=fake_run(capability,inputs,emit)
         else:
             from .agno_adapter import run_agno
-            result=run_agno(capability,inputs,emit)
+            if confirmed_research(request):
+                from .research_checkpoint import ResearchCheckpointStore
+                result=run_agno(capability,inputs,emit,research_checkpoint=ResearchCheckpointStore(DB,task_id,inputs))
+            else:
+                result=run_agno(capability,inputs,emit)
             if capability!='exam': result=verify_grounding(result,inputs.get('sources',[])+result.get('retrieved_sources',[]))
             if capability=='quiz' and result.get('quiz_status', {}).get('status') != 'failed': validate_quiz(result)
             if capability=='exam':
@@ -84,8 +144,7 @@ def execute(task_id):
         if capability=='quiz':
             if result.get('quiz_status', {}).get('status') == 'failed':
                 reason = 'No quiz questions passed generation and review.'
-                emit('result',result); status(task_id,'failed',result,reason)
-                emit('error',{'message':reason}); emit('run.completed',{'status':'failed'})
+                finish_task(task_id,'failed',result,reason)
                 return
             if request['provider']=='fake':
                 for item in result['items']:
@@ -93,19 +152,25 @@ def execute(task_id):
         if capability=='exam':
             from .exam_blueprint import render_exam
             canonical={key:result[key] for key in ('version','title','duration_minutes','total_points','output_format','instructions','style_descriptors','sections','seed','answer_key')}
+            if 'artifacts' in inputs:
+                from .exam_artifacts import build_exam_artifacts
+                canonical, artifact_manifest = build_exam_artifacts(canonical, inputs['blueprint'], inputs['artifacts'], request['provider'])
+                result.update(canonical)
+                result['artifacts'] = artifact_manifest
             result['export']=render_exam(canonical)
         if capability=='visualize':
             from .visualize import finalize_visual
             result['visualization']=finalize_visual(result)
         emit('progress',{'percent':100,'message':'Result ready'})
-        emit('result',result); status(task_id,'completed',result); emit('run.completed',{'status':'completed'})
+        finish_task(task_id,'completed',result)
     except Exception as exc:
         # Never include request secrets or full tracebacks in user-facing events.
         message=str(exc)[:1000]
         for key in ('OPENAI_API_KEY','TAVILY_API_KEY'):
             secret=os.getenv(key)
             if secret: message=message.replace(secret,'[redacted]')
-        status(task_id,'failed',error=message); emit('tool.failed',{'message':message}); emit('error',{'message':message}); emit('run.completed',{'status':'failed'})
+        emit('tool.failed',{'message':message})
+        finish_task(task_id,'failed',error=message)
 
 def launch(task_id): threading.Thread(target=execute,args=(task_id,),daemon=True).start()
 
@@ -167,39 +232,128 @@ def create_task(body:TaskRequest):
 @app.get('/api/tasks/{task_id}')
 def read_task(task_id:str):
     task=get_task(task_id)
-    return {'id':task_id,'status':task['status'],'result':json.loads(task['result']) if task['result'] else None,'error':task['error']}
+    if json.loads(task['request']).get('capability')=='quiz':
+        with LOCK,connect() as db:
+            return quiz_task_view(db,task)
+    out={'id':task_id,'status':task['status'],'result':json.loads(task['result']) if task['result'] else None,'error':task['error']}
+    if confirmed_research(json.loads(task['request'])) and task['status'] in ('interrupted','failed'):
+        out['can_resume_research']=True
+        with connect() as db:
+            out['last_event_id']=db.execute('SELECT COALESCE(MAX(id),0) AS last_id FROM events WHERE task_id=?',(task_id,)).fetchone()['last_id']
+    if task['status']=='paused':
+        with connect() as db:
+            card=db.execute("SELECT data FROM events WHERE task_id=? AND type='question' ORDER BY id DESC LIMIT 1",(task_id,)).fetchone()
+        if card: out['question']=json.loads(card['data'])
+    return out
+
+@app.post('/api/tasks/{task_id}/quiz/submit')
+def submit_quiz_answers(task_id:str, body:QuizSubmission):
+    task=get_task(task_id)
+    if json.loads(task['request']).get('capability')!='quiz':
+        raise HTTPException(409,'Task is not a quiz')
+    try:
+        with LOCK,connect() as db:
+            return submit_quiz(db,task_id,body.answers)
+    except QuizSubmissionError as exc:
+        raise HTTPException(exc.status_code,str(exc)) from exc
+
 
 @app.post('/api/tasks/{task_id}/resume',status_code=202)
 def resume_task(task_id:str,body:ResumeRequest):
     if sum(map(len,body.answers.values()))>10000: raise HTTPException(422,'Answers too long')
     with LOCK,connect() as db:
+        db.execute("BEGIN IMMEDIATE")
         task=db.execute('SELECT * FROM tasks WHERE id=?',(task_id,)).fetchone()
         if not task: raise HTTPException(404,'Unknown task')
-        if task['status']!='paused': raise HTTPException(409,'Task is not awaiting an answer')
         request=json.loads(task['request'])
-        card=db.execute("SELECT data FROM events WHERE task_id=? AND type='question' ORDER BY id DESC LIMIT 1",(task_id,)).fetchone()
-        if not card: raise HTTPException(409,'Task question state unavailable')
-        try: request['inputs'].update(confirmed_inputs(request['capability'],json.loads(card['data']),body.answers))
-        except ValueError as exc: raise HTTPException(422,str(exc)) from exc
-        db.execute("UPDATE tasks SET request=?,status='pending' WHERE id=?",(json.dumps(request),task_id))
+        if task['status'] in ('interrupted','failed') and confirmed_research(request):
+            if body.answers:
+                raise HTTPException(409,'Only confirmed interrupted research can resume without new answers')
+        elif task['status']=='paused':
+            card=db.execute("SELECT data FROM events WHERE task_id=? AND type='question' ORDER BY id DESC LIMIT 1",(task_id,)).fetchone()
+            if not card: raise HTTPException(409,'Task question state unavailable')
+            try: request['inputs'].update(confirmed_inputs(request['capability'],json.loads(card['data']),body.answers))
+            except ValueError as exc: raise HTTPException(422,str(exc)) from exc
+        else:
+            raise HTTPException(409,'Task is not awaiting an answer or interrupted research resume')
+        db.execute("UPDATE tasks SET request=?,status='pending',error=NULL WHERE id=?",(json.dumps(request),task_id))
     event(task_id,'run.resumed',{'answers':body.answers}); launch(task_id)
     return {'id':task_id,'status':'pending'}
 
 @app.get('/api/tasks/{task_id}/events')
 async def events(task_id:str,request:Request,after:int=0):
-    get_task(task_id)
+    is_quiz=json.loads(get_task(task_id)['request']).get('capability')=='quiz'
     try: cursor=max(after,int(request.headers.get('last-event-id','0')))
     except ValueError: raise HTTPException(422,'Invalid event cursor')
     async def stream():
         nonlocal cursor
         while not await request.is_disconnected():
-            with connect() as db: rows=db.execute('SELECT * FROM events WHERE task_id=? AND id>? ORDER BY id',(task_id,cursor)).fetchall()
-            for row in rows:
-                value=dict(row); value['data']=json.loads(value['data']); cursor=value['id']
+            with connect() as db:
+                db.execute('BEGIN')
+                rows=db.execute('SELECT * FROM events WHERE task_id=? AND id>? ORDER BY id LIMIT 128',
+                                (task_id,cursor)).fetchall()
+                task_status=db.execute('SELECT status FROM tasks WHERE id=?',(task_id,)).fetchone()['status']
+                values=[]
+                for row in rows:
+                    value=dict(row)
+                    value['data']=json.loads(value['data'])
+                    if is_quiz:
+                        value['data']=public_quiz_event(db,task_id,value['type'],value['data'])
+                    values.append(value)
+            for value in values:
+                cursor=value['id']
                 yield f'id: {cursor}\nevent: {value["type"]}\ndata: {json.dumps(value,ensure_ascii=False)}\n\n'
-            if get_task(task_id)['status'] in ('completed','failed') and not rows: break
+            if len(values)==128: continue
+            if task_status in ('completed','failed','interrupted'): break
             yield ': heartbeat\n\n'; await asyncio.sleep(.25)
     return StreamingResponse(stream(),media_type='text/event-stream',headers={'Cache-Control':'no-cache','X-Accel-Buffering':'no'})
+
+@app.get('/api/exam-artifacts/{artifact_id}/{filename:path}')
+def exam_artifact_file(artifact_id:str, filename:str):
+    from .exam_artifacts import resolve_artifact, FORMATS
+    try: path=resolve_artifact(artifact_id,filename)
+    except (ValueError,FileNotFoundError): raise HTTPException(404,'Unknown exam artifact')
+    return FileResponse(path,media_type=FORMATS[filename],filename=filename,
+                        headers={'X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"})
+
+class AnimationRevision(BaseModel):
+    animation: dict
+
+
+def render_video_revision(task_id, previous, animation):
+    from .media import build_lesson
+    status(task_id,'running',previous)
+    event(task_id,'step.started',{'name':'render_trusted_animation_revision'})
+    try:
+        updated=build_lesson({'animation':animation,'tts':'none'})
+    except Exception:
+        retained={**previous,'fallback_used':True,'revision_status':'failed'}
+        event(task_id,'step.failed',{'name':'render_trusted_animation_revision','retained_previous':True})
+        finish_task(task_id,'completed',retained,completion={'revision_status':'failed','retained_previous':True})
+        return
+    updated['revision_status']='completed'
+    event(task_id,'step.completed',{'name':'render_trusted_animation_revision'})
+    finish_task(task_id,'completed',updated,completion={'revision_status':'completed'})
+
+
+@app.post('/api/tasks/{task_id}/video/revise',status_code=202)
+def revise_video(task_id:str, body:AnimationRevision):
+    from .math_lesson_media import validate_animation
+    try: spec=validate_animation(body.animation)
+    except ValueError as exc: raise HTTPException(422,str(exc)) from exc
+    with LOCK,connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute('SELECT request,status,result FROM tasks WHERE id=?',(task_id,)).fetchone()
+        if not row: raise HTTPException(404,'Unknown task')
+        previous=json.loads(row['result']) if row['result'] else {}
+        if (row['status']!='completed' or json.loads(row['request'])['capability']!='video_lesson'
+                or previous.get('renderer')!='trusted-quadratic-animation'):
+            raise HTTPException(409,'Task needs a completed trusted animation before revision')
+        db.execute("UPDATE tasks SET status='pending',error=NULL WHERE id=?",(task_id,))
+    event(task_id,'video.revision.started',{'uses_fixed_template':True})
+    threading.Thread(target=render_video_revision,args=(task_id,previous,spec),daemon=True).start()
+    return {'id':task_id,'status':'pending'}
+
 
 @app.get('/api/media/{media_id}/{filename}')
 def media_file(media_id:str,filename:str):
@@ -212,5 +366,5 @@ def media_file(media_id:str,filename:str):
 def index(): return FileResponse(ROOT/'frontend'/'index.html')
 @app.get('/{asset}')
 def assets(asset:str):
-    if asset not in ('app.js','style.css'): raise HTTPException(404)
+    if asset not in ('app.js','style.css','reader.js','reader.css','quiz.js'): raise HTTPException(404)
     return FileResponse(ROOT/'frontend'/asset)

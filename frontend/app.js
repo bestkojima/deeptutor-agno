@@ -2,7 +2,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const state = {taskId: null, stream: null, seen: new Set(), questions: [], capabilities: [], busy: false};
-  const eventTypes = ['run.started', 'step.started', 'step.completed', 'tool.started', 'tool.completed', 'tool.failed', 'question', 'progress', 'step.failed', 'quiz.question', 'quiz.question.started', 'quiz.question.emitted', 'quiz.question.rejected', 'quiz.question.failed', 'quiz.completed', 'reader.located', 'research.parallel.started', 'research.parallel.completed', 'solve.review', 'result', 'error', 'run.completed'];
+  const eventTypes = ['run.started', 'step.started', 'step.completed', 'tool.started', 'tool.completed', 'tool.failed', 'question', 'progress', 'step.failed', 'quiz.question', 'quiz.question.started', 'quiz.question.emitted', 'quiz.question.rejected', 'quiz.question.failed', 'quiz.completed', 'reader.located', 'research.parallel.started', 'research.parallel.completed', 'research.interrupted', 'research.checkpoint.reused', 'research.checkpoint.retained', 'video.revision.started', 'solve.review', 'result', 'error', 'run.completed'];
   const stringify = value => typeof value === 'string' ? value : JSON.stringify(value, null, 2);
   function fail(error) { $('request-error').textContent = error.message || String(error); }
   async function request(path, body) {
@@ -11,7 +11,143 @@
     if (!response.ok) throw new Error(stringify(payload.detail || payload.error || `Request failed (${response.status})`));
     return payload;
   }
+  const reader = globalThis.TutorReader?.create({container: $('reader-workspace')});
+  const quiz = globalThis.TutorQuiz?.create({container: $('quiz-workspace'), request});
+  // Function graphs use numeric API data only. Model/API SVG strings never enter the DOM.
+  let plotRevision = 0;
+  let plotSpec = null;
+  let plotYRange = null;
+  function clearPlot() {
+    plotRevision++;
+    plotSpec = null; plotYRange = null;
+    $('visualization').hidden = true;
+    $('visualization-plot').replaceChildren();
+    $('plot-controls').replaceChildren();
+    $('plot-status').textContent = '';
+    $('plot-equation').textContent = '';
+  }
+  const finiteNumber = value => typeof value === 'number' && Number.isFinite(value);
+  function validatePlot(visual) {
+    const domain = visual?.content?.domain, curves = visual?.computed?.curves, range = visual?.computed?.y_range;
+    if (visual?.type !== 'function_graph' || !Array.isArray(domain) || domain.length !== 2 ||
+        !domain.every(v => finiteNumber(v) && Math.abs(v) <= 10000) || domain[1] - domain[0] < 1e-6 ||
+        !Array.isArray(range) || range.length !== 2 || !range.every(v => finiteNumber(v) && Math.abs(v) <= 2e15) || range[1] <= range[0] ||
+        !Array.isArray(curves) || curves.length < 1 || curves.length > 8) throw new Error('Invalid function graph data.');
+    for (const curve of curves) {
+      if (!Array.isArray(curve.points) || curve.points.length < 2 || curve.points.length > 501 ||
+          curve.points.some((point, i) => !Array.isArray(point) || point.length !== 2 ||
+            !point.every(finiteNumber) || Math.abs(point[1]) > 1e15 || point[0] < domain[0] || point[0] > domain[1] ||
+            (i > 0 && point[0] <= curve.points[i - 1][0]))) throw new Error('Invalid function graph points.');
+    }
+    return {domain, curves, range};
+  }
+  function svgNode(tag, attrs = {}, text) {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value));
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function drawPlot(visual) {
+    const {domain, curves, range} = validatePlot(visual);
+    // Keep the initial vertical scale while dragging, so coefficient changes remain visible.
+    const [ymin, ymax] = plotYRange || range;
+    const [xmin, xmax] = domain;
+    const coordinate = value => {
+      if (!Number.isFinite(value) || Math.abs(value) > 1e20) throw new Error('Invalid plot coordinate range.');
+      return value;
+    };
+    const x = value => coordinate(60 + (value - xmin) / (xmax - xmin) * 560);
+    const y = value => coordinate(300 - (value - ymin) / (ymax - ymin) * 270);
+    const svg = svgNode('svg', {viewBox: '0 0 680 350', role: 'img', 'aria-label': 'Server-computed function graph'});
+    svg.append(svgNode('title', {}, 'Function graph: x horizontal, y vertical'));
+    svg.append(svgNode('rect', {width: 680, height: 350, fill: '#ffffff'}));
+    const defs = svgNode('defs'), clip = svgNode('clipPath', {id: 'function-plot-bounds'});
+    clip.append(svgNode('rect', {x: 60, y: 30, width: 560, height: 270})); defs.append(clip); svg.append(defs);
+    for (let i = 0; i <= 4; i++) {
+      const vx = xmin + (xmax - xmin) * i / 4, vy = ymin + (ymax - ymin) * i / 4;
+      svg.append(svgNode('line', {x1: x(vx), x2: x(vx), y1: 30, y2: 300, stroke: '#dde4ed'}));
+      svg.append(svgNode('line', {x1: 60, x2: 620, y1: y(vy), y2: y(vy), stroke: '#dde4ed'}));
+      svg.append(svgNode('text', {x: x(vx), y: 320, 'text-anchor': 'middle', fill: '#15213a', 'font-size': 11}, String(Number(vx.toPrecision(4)))));
+      svg.append(svgNode('text', {x: 55, y: y(vy) + 4, 'text-anchor': 'end', fill: '#15213a', 'font-size': 11}, String(Number(vy.toPrecision(4)))));
+    }
+    if (xmin <= 0 && xmax >= 0) svg.append(svgNode('line', {x1: x(0), x2: x(0), y1: 30, y2: 300, stroke: '#526079'}));
+    if (ymin <= 0 && ymax >= 0) svg.append(svgNode('line', {x1: 60, x2: 620, y1: y(0), y2: y(0), stroke: '#526079'}));
+    const colors = ['#315cf6', '#c13570', '#14804a', '#995a00'];
+    curves.forEach((curve, i) => svg.append(svgNode('polyline', {
+      points: curve.points.map(([vx, vy]) => `${x(vx).toFixed(2)},${y(vy).toFixed(2)}`).join(' '),
+      fill: 'none', stroke: colors[i % colors.length], 'stroke-width': 2, 'clip-path': 'url(#function-plot-bounds)'
+    })));
+    svg.append(svgNode('text', {x: 640, y: 320, fill: '#15213a'}, 'x'));
+    svg.append(svgNode('text', {x: 24, y: 24, fill: '#15213a'}, 'y'));
+    $('visualization-plot').replaceChildren(svg);
+    if (!plotYRange) plotYRange = [...range];
+    const curve = visual.content.curves?.[0];
+    $('plot-equation').textContent = curve?.function === 'quadratic' && visual.content.curves.length === 1
+      ? `Displayed: y = ${curve.parameters.a}x² + (${curve.parameters.b})x + (${curve.parameters.c})`
+      : 'Server-computed sampled curves';
+  }
+  function showPlot(visual) {
+    clearPlot();
+    if (visual?.type !== 'function_graph') return;
+    $('visualization').hidden = false;
+    try {
+      drawPlot(visual);
+      const curve = visual.content.curves?.[0];
+      if (visual.content.curves?.length !== 1 || curve.function !== 'quadratic') {
+        $('plot-status').textContent = 'Static graph. Coefficient sliders support one quadratic curve.'; return;
+      }
+      const parameters = curve.parameters;
+      if (!parameters || !['a', 'b', 'c'].every(key => finiteNumber(parameters[key]) && Math.abs(parameters[key]) <= 1e6))
+        throw new Error('Invalid quadratic parameters.');
+      plotSpec = {domain: [...visual.content.domain], samples: visual.computed.curves[0].points.length,
+        curves: [{function: 'quadratic', parameters: {...parameters}}]};
+      for (const key of ['a', 'b', 'c']) {
+        const label = document.createElement('label'); label.htmlFor = `coefficient-${key}`;
+        label.textContent = `${key} coefficient`;
+        const input = document.createElement('input'); input.id = `coefficient-${key}`; input.type = 'range';
+        input.min = String(Math.min(-10, parameters[key])); input.max = String(Math.max(10, parameters[key]));
+        input.step = 'any'; input.value = String(parameters[key]);
+        const output = document.createElement('output'); output.id = `coefficient-${key}-value`; output.textContent = input.value;
+        input.addEventListener('input', updatePlot);
+        $('plot-controls').append(label, input, output);
+      }
+      $('plot-status').textContent = 'Drag a coefficient. Samples update on the server, without a model call. Vertical scale stays fixed.';
+    } catch (error) {
+      $('visualization-plot').replaceChildren(); $('plot-controls').replaceChildren();
+      $('plot-status').textContent = error.message;
+    }
+  }
+  async function updatePlot() {
+    const revision = ++plotRevision;
+    if (!plotSpec) return;
+    const parameters = {};
+    try {
+      for (const key of ['a', 'b', 'c']) {
+        const raw = $(`coefficient-${key}`).value;
+        const value = Number(raw);
+        if (!raw.trim() || !Number.isFinite(value) || Math.abs(value) > 1e6) throw new Error('Enter finite coefficients within ±1000000.');
+        parameters[key] = value;
+        $(`coefficient-${key}-value`).textContent = String(value);
+      }
+      const spec = {...plotSpec, curves: [{function: 'quadratic', parameters}]};
+      $('plot-status').textContent = 'Updating samples… Previous graph shown until ready.';
+      const result = await request('/api/visualize/plot', spec);
+      if (revision !== plotRevision) return;
+      validatePlot(result);
+      const returned = result.content.curves?.[0];
+      if (result.content.curves?.length !== 1 || returned?.function !== 'quadratic' ||
+          !['a', 'b', 'c'].every(key => returned.parameters?.[key] === parameters[key])) throw new Error('Invalid plot response parameters.');
+      drawPlot(result);
+      plotSpec = spec;
+      $('plot-status').textContent = 'Updated from backend samples. Fixed vertical scale; curves outside the window are clipped.';
+    } catch (error) {
+      if (revision === plotRevision) $('plot-status').textContent = `${error.message} Last valid graph retained.`;
+    }
+  }
   function clearTask() {
+    reader?.reset(); quiz?.reset();
+    if ($('research-resume')) $('research-resume').hidden = true;
+    clearPlot();
     if (state.stream) state.stream.close();
     state.stream = null; state.seen.clear(); state.questions = [];
     $('trace').replaceChildren(); $('trace-empty').hidden = false; $('event-count').textContent = '0 events';
@@ -60,7 +196,7 @@
     const id = String(event.id ?? message.lastEventId ?? '');
     if (id && state.seen.has(id)) return;
     if (id) state.seen.add(id);
-    trace(event);
+    trace(event); reader?.handleEvent(event); quiz?.handleEvent(event);
     const data = event.data || {};
     switch (event.type) {
       case 'progress': {
@@ -69,7 +205,12 @@
         $('status').textContent = data.message || data.status || 'Working…'; break;
       }
       case 'question': ask(data); break;
+      case 'research.interrupted':
+        $('status').textContent = 'Research interrupted. Resume to reuse finished evidence.';
+        if ($('research-resume')) $('research-resume').hidden = false;
+        state.stream?.close(); state.stream = null; break;
       case 'result': {
+        showPlot(data.visualization);
         $('result').hidden = false;
         $('result-text').textContent = stringify(data);
         const media = $('lesson-media');
@@ -99,15 +240,28 @@
         state.stream?.close(); state.stream = null; break;
     }
   }
-  function connect(id) {
+  function connect(id, after = 0) {
     state.taskId = id; $('task-id').textContent = `Task ${id}`; $('connection').textContent = 'Connecting';
-    const stream = new EventSource(`/api/tasks/${encodeURIComponent(id)}/events`); state.stream = stream;
+    const stream = new EventSource(`/api/tasks/${encodeURIComponent(id)}/events${after ? '?after=' + after : ''}`); state.stream = stream;
     // EventSource carries Last-Event-ID on automatic reconnect; event IDs also deduplicate replay.
     stream.onmessage = consume;
     eventTypes.forEach(type => stream.addEventListener(type, message => { if (message.data) consume(message); }));
     stream.onopen = () => { $('connection').textContent = $('questions').hidden ? 'Connected' : 'Needs input'; };
     stream.onerror = message => { if (!message.data && state.stream === stream) $('connection').textContent = stream.readyState === EventSource.CLOSED ? 'Disconnected' : 'Reconnecting…'; };
   }
+  $('plot-example').addEventListener('click', async () => {
+    clearPlot();
+    const revision = plotRevision;
+    $('visualization').hidden = false;
+    $('plot-status').textContent = 'Loading backend samples…';
+    try {
+      const visual = await request('/api/visualize/plot', {domain: [-5, 5], samples: 101,
+        curves: [{function: 'quadratic', parameters: {a: 1, b: 0, c: 0}}]});
+      if (revision === plotRevision) showPlot(visual);
+    } catch (error) {
+      if (revision === plotRevision) $('plot-status').textContent = error.message;
+    }
+  });
   $('task-form').addEventListener('submit', async event => {
     event.preventDefault(); if (state.busy) return;
     let inputs;
@@ -117,9 +271,34 @@
     try {
       const task = await request('/api/tasks', {capability: $('capability').value, provider: $('provider').value, inputs});
       if (!task.id) throw new Error('Server did not return a task ID.');
-      clearTask(); $('status').className = ''; connect(task.id);
+      clearTask(); $('status').className = '';
+      if (['immersive_reading','reading'].includes($('capability').value)) reader?.beginTask({taskId: task.id, sources: inputs.sources});
+      if ($('capability').value === 'quiz') quiz?.beginTask({taskId: task.id});
+      connect(task.id);
     } catch (error) { fail(error); }
     finally { state.busy = false; $('start').disabled = false; }
+  });
+  async function resumeResearch(taskId, after) {
+    await request(`/api/tasks/${encodeURIComponent(taskId)}/resume`, {answers: {}});
+    if ($('research-resume')) $('research-resume').hidden = true;
+    state.stream?.close();
+    connect(taskId, after);
+  }
+  $('research-resume')?.addEventListener('click', async () => {
+    if (!state.taskId) return;
+    try { await resumeResearch(state.taskId, Math.max(0, ...[...state.seen].map(Number).filter(Number.isFinite))); }
+    catch (error) { fail(error); }
+  });
+  $('research-reopen')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const id = $('research-task-id').value.trim();
+    if (!/^[a-f0-9]{32}$/.test(id)) { fail(new Error('Enter a valid research task ID.')); return; }
+    try {
+      const status = await request(`/api/tasks/${id}`);
+      if (!status.can_resume_research) throw new Error('That task is not recoverable confirmed research.');
+      await request(`/api/tasks/${id}/resume`, {answers: {}});
+      clearTask(); connect(id, status.last_event_id);
+    } catch (error) { fail(error); }
   });
   $('answers-form').addEventListener('submit', async event => {
     event.preventDefault(); if ($('resume').disabled) return;

@@ -1,4 +1,6 @@
-# DeepTutor → Agno：行为对照与验收
+# DeepTutor → Agno：历史基线的行为对照与验收
+
+> 本页保留 Agno 2.3.21 原型的验证记录。请以[当前实现、代码入口与限制](main-implementation.md)为现状。
 
 基线：DeepTutor v1.7.2，固定提交 [60fb3bd](https://github.com/HKUDS/DeepTutor/tree/60fb3bdfddb30b7740c7ce3bd9b28d908f2af6db)；本项目锁定 Agno 2.3.21。对照的是功能行为，不要求同名类、同一传输协议或相同前端。已有 [流程图对照](capability-flow-comparison.md) 是原型快照。
 

@@ -1,4 +1,4 @@
-"""Bounded research fan-out using Agno 2.3.21's real Parallel/Step objects.
+"""Bounded research fan-out using Agno's real Parallel/Step objects.
 
 No model, credentials or network client lives here. The adapter supplies a
 thread-safe, timeout-bounded ``run_branch(name, task)`` callback and owns source
@@ -95,6 +95,8 @@ def research_evidence_stage(
     plan_context: dict[str, Any],
     run_branch: Callable[[str, str], dict[str, Any]],
     emit: Callable[[str, dict[str, Any]], None],
+    *, completed_branches: dict[str, dict[str, Any]] | None = None,
+    checkpoint_branch: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Run at most six evidence workers once each and aggregate in plan order.
 
@@ -108,6 +110,8 @@ def research_evidence_stage(
 
     lock = Lock()
     records: dict[str, dict[str, Any]] = {}
+    completed_branches = completed_branches or {}
+    checkpoint_errors = []
 
     def event(kind: str, data: dict[str, Any]) -> None:
         # The caller may persist events in a store that requires serialization.
@@ -118,6 +122,15 @@ def research_evidence_stage(
         name, task = scope['name'], scope['task']
 
         def executor(step_input: StepInput) -> StepOutput:
+            cached = completed_branches.get(name)
+            usable_cache = (cached is not None and cached.get('task') == task
+                            and (cached.get('evidence') or {}).get('citations'))
+            if usable_cache and cached.get('status') == 'completed':
+                record = deepcopy(cached)
+                with lock:
+                    records[name] = record
+                event('research.checkpoint.reused', {'name': name, 'status': record['status']})
+                return StepOutput(content=record)
             event('step.started', {'name': name, 'engine': 'agno', 'task': task})
             try:
                 evidence = _normalize_evidence(run_branch(name, task))
@@ -130,6 +143,19 @@ def research_evidence_stage(
                 # Exception text may contain credentials, URLs or provider bodies.
                 record = {**scope, 'status': 'failed', 'error_type': type(exc).__name__,
                           'evidence': None, 'gaps': ['Evidence branch failed; this task is unresolved.']}
+            if (usable_cache and cached.get('status') == 'partial'
+                    and not (record.get('evidence') or {}).get('citations')):
+                record = {**deepcopy(cached),
+                          'gaps': list(dict.fromkeys(cached['gaps'] +
+                              ['Resume did not obtain new cited evidence; previous partial evidence retained.']))}
+                event('research.checkpoint.retained', {'name': name, 'status': 'partial'})
+            if checkpoint_branch is not None:
+                try:
+                    checkpoint_branch(record)
+                except Exception:
+                    with lock:
+                        checkpoint_errors.append(name)
+                    return StepOutput(content={'checkpoint_failed': name})
             with lock:
                 records[name] = record
             event('step.failed' if record['status'] == 'failed' else 'progress',
@@ -143,6 +169,9 @@ def research_evidence_stage(
     event('research.parallel.started', {'branches': len(scopes), 'engine': 'agno', 'max_branches': MAX_BRANCHES})
     Parallel(*(make_step(scope) for scope in scopes), name='research_evidence_parallel').execute(
         StepInput(input={'tasks': deepcopy(scopes)}))
+
+    if checkpoint_errors:
+        raise RuntimeError('Research checkpoint persistence failed; report withheld')
 
     branches, citations, gaps, paragraphs = [], [], [], []
     seen_citations: set[str] = set()

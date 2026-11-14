@@ -49,5 +49,22 @@ class ParallelTests(unittest.TestCase):
         self.assertEqual(result['citations'], [])
 
 
+    def test_resume_retries_partial_and_retains_verified_evidence_on_failure(self):
+        plan={'tasks':['A']}
+        initial=research_evidence_stage(plan, lambda *_: {
+            'text':'Partial evidence', 'citations':[{'source_id':'s','quote':'known'}],
+            'limitations':['Need more evidence'],
+        }, lambda *_: None)
+        cached=initial['data']['branches'][0]
+        calls=[]
+        def retry(name,task):
+            calls.append(task)
+            raise RuntimeError('fixture failure')
+        resumed=research_evidence_stage(plan,retry,lambda *_: None,completed_branches={cached['name']:cached})
+        self.assertEqual(calls,['A'])
+        self.assertEqual(resumed['citations'],initial['citations'])
+        self.assertTrue(resumed['data']['partial'])
+
+
 if __name__ == '__main__':
     unittest.main()

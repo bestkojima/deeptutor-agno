@@ -1,0 +1,309 @@
+{
+  "capability": "exam",
+  "provider": "fake",
+  "inputs": {
+    "blueprint": {
+      "version": 1,
+      "title": "数学 · 2026 新课标Ⅰ卷结构验收样张（合成数据）",
+      "duration_minutes": 120,
+      "total_points": 150,
+      "output_format": "markdown",
+      "instructions": "仅用于验收题号、分值与导出。其余题为占位，不是真题、也不宜作正式练习。",
+      "style_descriptors": [],
+      "sections": [
+        {
+          "id": "single",
+          "title": "一、单项选择题",
+          "instructions": "",
+          "duration_minutes": null,
+          "style_descriptors": [],
+          "slots": [
+            {
+              "number": "1",
+              "type": "single_choice",
+              "points": 5,
+              "choice_labels": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 1，不是真题"
+            },
+            {
+              "number": "2",
+              "type": "single_choice",
+              "points": 5,
+              "choice_labels": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 2，不是真题"
+            },
+            {
+              "number": "3",
+              "type": "single_choice",
+              "points": 5,
+              "choice_labels": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 3，不是真题"
+            },
+            {
+              "number": "4",
+              "type": "single_choice",
+              "points": 5,
+              "choice_labels": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 4，不是真题"
+            },
+            {
+              "number": "5",
+              "type": "single_choice",
+              "points": 5,
+              "choice_labels": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 5，不是真题"
+            },
+            {
+              "number": "6",
+              "type": "single_choice",
+              "points": 5,
+              "choice_labels": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 6，不是真题"
+            },
+            {
+              "number": "7",
+              "type": "single_choice",
+              "points": 5,
+              "choice_labels": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 7，不是真题"
+            },
+            {
+              "number": "8",
+              "type": "single_choice",
+              "points": 5,
+              "choice_labels": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 8，不是真题"
+            }
+          ]
+        },
+        {
+          "id": "multi",
+          "title": "二、多项选择题",
+          "instructions": "",
+          "duration_minutes": null,
+          "style_descriptors": [],
+          "slots": [
+            {
+              "number": "9",
+              "type": "multiple_choice",
+              "points": 6,
+              "choice_labels": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 9，不是真题"
+            },
+            {
+              "number": "10",
+              "type": "multiple_choice",
+              "points": 6,
+              "choice_labels": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 10，不是真题"
+            },
+            {
+              "number": "11",
+              "type": "multiple_choice",
+              "points": 6,
+              "choice_labels": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 11，不是真题"
+            }
+          ]
+        },
+        {
+          "id": "fill",
+          "title": "三、填空题",
+          "instructions": "",
+          "duration_minutes": null,
+          "style_descriptors": [],
+          "slots": [
+            {
+              "number": "12",
+              "type": "fill_blank",
+              "points": 5,
+              "choice_labels": [],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 12，不是真题"
+            },
+            {
+              "number": "13",
+              "type": "fill_blank",
+              "points": 5,
+              "choice_labels": [],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 13，不是真题"
+            },
+            {
+              "number": "14",
+              "type": "fill_blank",
+              "points": 5,
+              "choice_labels": [],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 14，不是真题"
+            }
+          ]
+        },
+        {
+          "id": "solve",
+          "title": "四、解答题",
+          "instructions": "",
+          "duration_minutes": null,
+          "style_descriptors": [],
+          "slots": [
+            {
+              "number": "15",
+              "type": "short_answer",
+              "points": 13,
+              "choice_labels": [],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 15，不是真题"
+            },
+            {
+              "number": "16",
+              "type": "short_answer",
+              "points": 15,
+              "choice_labels": [],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 16，不是真题"
+            },
+            {
+              "number": "17",
+              "type": "short_answer",
+              "points": 15,
+              "choice_labels": [],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 17，不是真题"
+            },
+            {
+              "number": "18",
+              "type": "short_answer",
+              "points": 17,
+              "choice_labels": [],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 18，不是真题"
+            },
+            {
+              "number": "19",
+              "type": "short_answer",
+              "points": 17,
+              "choice_labels": [],
+              "style_descriptors": [
+                "合成结构测试"
+              ],
+              "source_stem": "合成参考占位题 19，不是真题"
+            }
+          ]
+        }
+      ]
+    },
+    "seed": 23,
+    "artifacts": {
+      "version": 1,
+      "geometry": {
+        "template": "right_triangle_area_v1",
+        "section_id": "solve",
+        "number": "15",
+        "base": 3,
+        "height": 4
+      }
+    }
+  }
+}

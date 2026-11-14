@@ -17,7 +17,7 @@ class ArithmeticTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 calculate(value)
 
-@unittest.skipUnless(AGNO_AVAILABLE, 'Install agno==2.3.21 and openai to run actual orchestration smoke tests')
+@unittest.skipUnless(AGNO_AVAILABLE, 'Install agno==3.2.0 and openai to run actual orchestration smoke tests')
 class AgnoWorkflowTests(unittest.TestCase):
     def run_fixture(self, capability, inputs=None, rejected=False):
         from agno.agent import Agent

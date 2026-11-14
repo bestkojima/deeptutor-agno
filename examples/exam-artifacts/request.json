@@ -1,0 +1,56 @@
+{
+  "capability": "exam",
+  "provider": "fake",
+  "inputs": {
+    "blueprint": {
+      "version": 1,
+      "title": "Practice exam",
+      "duration_minutes": 30,
+      "total_points": 10,
+      "output_format": "markdown",
+      "instructions": "Choose one answer for each question.",
+      "style_descriptors": [
+        "concise academic language"
+      ],
+      "sections": [
+        {
+          "id": "A",
+          "title": "Multiple choice",
+          "instructions": "Choose one.",
+          "duration_minutes": 30,
+          "style_descriptors": [
+            "four options"
+          ],
+          "slots": [
+            {
+              "number": "1",
+              "type": "single_choice",
+              "points": 10,
+              "choice_labels": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "style_descriptors": [
+                "one-step arithmetic"
+              ],
+              "source_stem": "What is 2 + 3?"
+            }
+          ]
+        }
+      ]
+    },
+    "seed": 7,
+    "artifacts": {
+      "version": 1,
+      "geometry": {
+        "template": "right_triangle_area_v1",
+        "section_id": "A",
+        "number": "1",
+        "base": 3,
+        "height": 4
+      }
+    }
+  }
+}

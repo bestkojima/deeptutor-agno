@@ -13,4 +13,4 @@
     xelatex -no-shell-escape answers.tex
     xelatex -no-shell-escape answers.tex
 
-尚未接入 Agno。集成时使用经校验的结构化题目与受信任模板；不直接编译模型输出的任意 LaTeX。
+Agno 的 [Exam 导出](../exam-artifacts/)已复用这份样式。该静态样张用可信 LaTeX 编排公式；自动导出把经校验的模型/用户文本按字面转义，仅渲染明确允许的图形模板，不执行任意 LaTeX。

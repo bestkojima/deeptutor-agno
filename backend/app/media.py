@@ -65,6 +65,9 @@ async def _voice(text: str, voice: str, dst: Path) -> None:
 
 def build_lesson(inputs: dict) -> dict:
     """Render structured scenes to H.264 video and UTF-8 WebVTT. Call off the event loop."""
+    if "animation" in inputs:
+        from .math_lesson_media import build_math_lesson
+        return build_math_lesson(inputs)
     title = str(inputs.get("title") or "视频课程").strip()[:100]
     raw = inputs.get("scenes")
     if not isinstance(raw, list) or not 1 <= len(raw) <= 12:

@@ -1,6 +1,6 @@
 # Agno implementation and verification
 
-Adapter targets **agno==2.3.21**, `openai`, and Pydantic 2. It uses actual `Agent`, `Workflow`, `Step`, `StepInput` and `StepOutput`, not similarly named replacements. Server secrets are read only at execution; no API calls are made at import. `OPENAI_API_KEY` enables live mode; `AGNO_MODEL` selects the server-approved OpenAI model (default gpt-4.1-mini). No secrets are required for fake mode.
+Current adapter targets **agno==3.2.0** ([upgrade notes](agno-stable-upgrade.md)), `openai`, and Pydantic 2. It uses actual `Agent`, `Workflow`, `Step`, `StepInput` and `StepOutput`, not similarly named replacements. Server secrets are read only at execution; no API calls are made at import. `OPENAI_API_KEY` enables live mode; `AGNO_MODEL` selects the server-approved OpenAI model (default gpt-4.1-mini). No secrets are required for fake mode.
 
 API/source checked against the installed 2.3.21 wheel (`agno/agent/agent.py`, `agno/workflow/workflow.py`, `agno/workflow/step.py`, `agno/workflow/types.py`) and official documentation:
 - https://docs.agno.com/workflows/overview
