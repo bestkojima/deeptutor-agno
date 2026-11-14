@@ -26,15 +26,15 @@ class AgnoWorkflowTests(unittest.TestCase):
             names.append(agent.name)
             context = json.loads(payload)
             request = context['request']
-            if agent.name == 'plan':
+            if agent.name in ('plan','quiz_plan'):
                 content = Plan(tasks=['Check the supplied evidence'])
-            elif agent.name == 'review':
+            elif agent.name in ('review','quiz_review'):
                 content = Review(accepted=not rejected, checks=['fixture check'], corrections=['fixture rejection'] if rejected else [])
             else:
                 citations = [{'source_id': s['id'], 'quote': s['text']} for s in request.get('sources', [])]
                 data = {}
                 if capability == 'quiz':
-                    data = {'items': [{'id': '1', 'question': '2+3?', 'options': ['4', '5'], 'answer_index': 1, 'explanation': '2+3=5'}]}
+                    data = {'item': {'id': '1', 'question': '2+3?', 'options': ['4', '5'], 'answer_index': 1, 'explanation': '2+3=5'}}
                 if capability == 'exam':
                     data = {'exam': deterministic_sample_exam(request['blueprint'], request['exam_contract']['seed'])}
                 content = TutorOutput(text='offline fixture', citations=citations, data=data)
@@ -54,12 +54,12 @@ class AgnoWorkflowTests(unittest.TestCase):
 
     def test_research_citations_and_stages(self):
         result, names, _ = self.run_fixture('research', {'prompt': 'evidence', 'sources': [{'id': 's1', 'text': 'Known evidence.', 'page': 4}]})
-        self.assertEqual(names, ['plan', 'evidence', 'answer', 'review'])
+        self.assertEqual(names, ['plan', 'research_evidence_01', 'answer', 'review'])
         self.assertEqual(result['citations'][0]['page'], 4)
         self.assertEqual(result['citations'][0]['quote'], 'Known evidence.')
 
     def test_quiz_contract(self):
-        result, _, _ = self.run_fixture('quiz')
+        result, _, _ = self.run_fixture('quiz', {'prompt': 'practice', 'quiz_count': 1})
         self.assertEqual(result['items'][0]['answer_index'], 1)
 
     def test_exam_canonical_contract(self):

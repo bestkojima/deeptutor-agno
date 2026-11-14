@@ -2,7 +2,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const state = {taskId: null, stream: null, seen: new Set(), questions: [], capabilities: [], busy: false};
-  const eventTypes = ['run.started', 'step.started', 'step.completed', 'tool.started', 'tool.completed', 'tool.failed', 'question', 'progress', 'quiz.question', 'result', 'error', 'run.completed'];
+  const eventTypes = ['run.started', 'step.started', 'step.completed', 'tool.started', 'tool.completed', 'tool.failed', 'question', 'progress', 'step.failed', 'quiz.question', 'quiz.question.started', 'quiz.question.emitted', 'quiz.question.rejected', 'quiz.question.failed', 'quiz.completed', 'reader.located', 'research.parallel.started', 'research.parallel.completed', 'solve.review', 'result', 'error', 'run.completed'];
   const stringify = value => typeof value === 'string' ? value : JSON.stringify(value, null, 2);
   function fail(error) { $('request-error').textContent = error.message || String(error); }
   async function request(path, body) {

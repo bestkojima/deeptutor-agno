@@ -1,0 +1,66 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{exam-layout}[2026/11/14 v1.0 Printable Chinese math exam]
+\newif\ifExamAnswers
+\DeclareOption{answers}{\ExamAnswerstrue}
+\DeclareOption{student}{\ExamAnswersfalse}
+\ExecuteOptions{student}
+\ProcessOptions\relax
+\RequirePackage{iftex}
+\RequireXeTeX
+\RequirePackage{fontspec}
+\RequirePackage[a4paper,left=22mm,right=22mm,top=22mm,bottom=23mm,headheight=15pt]{geometry}
+\RequirePackage{amsmath,amssymb,array,tabularx,enumitem,fancyhdr,needspace,lastpage}
+% TeX Live with Chinese fonts, Noto CJK, or Windows SimSun.
+\IfFontExistsTF{Noto Serif CJK SC}
+  {\setmainfont{Noto Serif CJK SC}}
+  {\IfFontExistsTF{FandolSong-Regular.otf}
+    {\setmainfont[BoldFont=FandolSong-Bold.otf]{FandolSong-Regular.otf}}
+    {\setmainfont[AutoFakeBold=2]{SimSun}}}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus .6pt
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\setlength{\emergencystretch}{1.5em}
+\renewcommand{\baselinestretch}{1.17}
+\newcommand{\ExamHeader}{数学试卷}
+\newcommand{\ExamEdition}{\ifExamAnswers 参考答案\else 学生卷\fi}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small \ExamHeader}
+\fancyhead[R]{\small \ExamEdition}
+\fancyfoot[C]{\small 第 \thepage\ 页\quad 共 \pageref{LastPage} 页}
+\raggedbottom
+\newcommand{\ExamTitle}[4]{%
+  \begin{center}
+  {\LARGE\bfseries #1\par}
+  \vspace{2mm}{\normalsize #2\par}
+  \vspace{1mm}{\small 满分 #3 分\qquad 考试时间 #4 分钟}
+  \end{center}
+}
+\newcommand{\CandidateLine}{姓名：\rule{30mm}{.4pt}\quad 班级：\rule{30mm}{.4pt}\quad 考号：\rule{34mm}{.4pt}\par\vspace{2mm}}
+\newcommand{\SectionTitle}[1]{\Needspace{4\baselineskip}\par\vspace{2mm}{\large\bfseries #1}\par}
+% One counter for all sections; use \setcounter{question}{N} only when needed.
+\newcounter{question}
+\newcommand{\Question}[1]{\par\Needspace{3\baselineskip}\refstepcounter{question}%
+  \noindent\textbf{\thequestion.}\enspace #1\par}
+\newcommand{\Points}[1]{（#1 分）}
+\newcommand{\Blank}[1][22mm]{\rule{#1}{.4pt}}
+\newcommand{\ChoiceBox}{（\hspace{1em}）}
+\newcommand{\Choices}[4]{%
+  \noindent\begin{tabularx}{\linewidth}{@{}XXXX@{}}
+   \textbf{A.}\ #1 & \textbf{B.}\ #2 & \textbf{C.}\ #3 & \textbf{D.}\ #4
+  \end{tabularx}\par\vspace{1mm}}
+\newcommand{\LongChoices}[4]{%
+  \noindent\begin{tabularx}{\linewidth}{@{}X@{\hspace{8mm}}X@{}}
+   \textbf{A.}\ #1 & \textbf{B.}\ #2 \\
+   \textbf{C.}\ #3 & \textbf{D.}\ #4
+  \end{tabularx}\par\vspace{1mm}}
+\newenvironment{Subquestions}{\begin{enumerate}[label={(\arabic*)},leftmargin=2.8em,itemsep=2pt,topsep=2pt]}{\end{enumerate}}
+\newcommand{\AnswerSpace}[1]{\par\vspace*{#1}}
+
+\newcommand{\AnswerBox}[1][26mm]{%
+  \par\Needspace{\dimexpr#1+5mm\relax}\noindent
+  \fbox{\parbox[t][#1][t]{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}%
+    {\small 作答区}}\par}
+\newcommand{\ExamAnswer}[2]{%
+  \ifExamAnswers\par\noindent\textbf{#1.}\enspace#2\par\fi}

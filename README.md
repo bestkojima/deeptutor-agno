@@ -1,5 +1,10 @@
 # Agno Tutor Workbench (independent implementation)
 
+当前复现范围与限制：[DeepTutor → Agno 行为对照与验收](docs/agno-parity.md)。
+
+LaTeX 样式示例：[2026 新课标Ⅰ卷体例](examples/latex-gaokao-i-2026/)。该样式可单独编译；自动出卷接入 LaTeX、PDF 与 Markdown/SVG 由 [Exam 工单 #7](https://github.com/bestkojima/deeptutor-agno/issues/7) 跟踪。
+
+
 A local, single-user educational workflow prototype inspired by DeepTutor. This is **not a verified 1:1 DeepTutor replacement**. No upstream code is copied. Upstream: https://github.com/HKUDS/DeepTutor (Apache-2.0); official capability reference: https://docs.deeptutor.info/zh-cn/explore/chat-workspace .
 
 ## Run

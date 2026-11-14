@@ -31,6 +31,20 @@ class ApiTests(unittest.TestCase):
   from app.exam_blueprint import EXAMPLE_BLUEPRINT
   id=self.client.post('/api/tasks',json={'capability':'exam','inputs':{'blueprint':EXAMPLE_BLUEPRINT,'seed':3}}).json()['id']
   self.assertEqual(self.wait(id)['status'],'completed')
+ def test_caption_ingestion_api(self):
+  response=self.client.post('/api/sources/captions?filename=demo.vtt',
+      content=b'WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nExact words.\n')
+  self.assertEqual(response.status_code,200,response.text)
+  self.assertIs(response.json()['transcribed'],False)
+  self.assertEqual(response.json()['sources'][0]['start_seconds'],3)
+  self.assertEqual(self.client.post('/api/sources/captions?filename=demo.mp4',content=b'unsupported').status_code,422)
+ def test_graph_recompute_api(self):
+  spec={'domain':[0,4],'samples':5,
+        'curves':[{'function':'quadratic','parameters':{'a':1,'b':-4,'c':3}}]}
+  response=self.client.post('/api/visualize/plot',json=spec)
+  self.assertEqual(response.status_code,200,response.text)
+  self.assertIn('<svg',response.json()['svg'])
+  self.assertEqual(self.client.post('/api/visualize/plot',json={'curves':[{'function':'eval'}]}).status_code,422)
  def test_failed_solve(self):
   id=self.client.post('/api/tasks',json={'capability':'solve','inputs':{'prompt':'__import__("os")'}}).json()['id']
   self.assertEqual(self.wait(id)['status'],'failed')

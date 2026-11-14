@@ -1,0 +1,82 @@
+\SectionTitle{一、单项选择题（共8题，每题5分，共40分）}
+\Question{已知集合 $A=\{x\mid -1<x\leq3\}$，$B=\{x\mid0\leq x<4\}$，则 $A\cap B=$（　）}
+\Choices{$(-1,4)$}{$[0,3]$}{$(0,3)$}{$[0,4)$}
+\Question{复数 $\dfrac{1+2i}{1-i}$ 的虚部为（　）}
+\Choices{$-\dfrac12$}{$\dfrac12$}{$\dfrac32$}{$\dfrac32i$}
+\Question{$(x+x^{-1})^6$ 的展开式中，$x^2$ 的系数为（　）}
+\Choices{6}{15}{20}{30}
+\Question{已知 $\alpha\in(0,\dfrac\pi2)$，$\sin\alpha=\dfrac35$，则 $\sin2\alpha=$（　）}
+\Choices{$\dfrac7{25}$}{$\dfrac{12}{25}$}{$\dfrac{24}{25}$}{$\dfrac45$}
+\Question{已知向量 $\boldsymbol a=(1,2)$，$\boldsymbol b=(t,-1)$，且 $\boldsymbol a\perp\boldsymbol b$，则 $t=$（　）}
+\Choices{$-2$}{$-\dfrac12$}{$\dfrac12$}{2}
+\Question{某组数据为4，6，8，10，12。按 $s^2=\dfrac1n\sum_{j=1}^{n}(x_j-\bar x)^2$ 定义的方差为（　）}
+\Choices{4}{8}{10}{16}
+
+\clearpage
+\Question{随机变量 $X\sim N(2,9)$，已知 $P(X\leq-1)=p$，则 $P(2<X\leq5)=$（　）}
+\Choices{$p$}{$1-p$}{$\dfrac12-p$}{$\dfrac12+p$}
+\Question{关于 $x$ 的方程 $|x^2-2x|=a$ 有四个不同实数解，则实数 $a$ 的取值范围为（　）}
+\Choices{$(0,1)$}{$[0,1]$}{$(1,+\infty)$}{$(-1,1)$}
+
+\SectionTitle{二、多项选择题（共3题，每题6分，共18分）}
+每题有多个正确选项。全部选对得6分，部分选对得部分分，有选错的得0分。本练习统一约定：只选正确选项时，每选对一个得2分，最高6分。
+\Question{已知函数 $f(x)=2\sin(2x-\dfrac\pi6)$，下列说法正确的是（　）}
+\LongChoices{最小正周期为 $\pi$}{直线 $x=\dfrac\pi3$ 是其图像的一条对称轴}{在区间 $[\dfrac\pi3,\dfrac{5\pi}6]$ 上单调递增}{$f(\dfrac\pi{12})=0$}
+\Question{一枚质地均匀的硬币独立抛掷3次，设正面朝上的次数为 $X$。下列结论正确的是（　）}
+\LongChoices{$E(X)=\dfrac32$}{$D(X)=\dfrac34$}{$P(X\geq2)=\dfrac12$}{$P(X=1)=\dfrac14$}
+\Question{已知函数 $f(x)=x+\dfrac1x$，定义域为 $(0,+\infty)$。下列结论正确的是（　）}
+\LongChoices{$f(x)$ 的最小值为2}{$f(x)$ 在 $(0,1)$ 上单调递减}{方程 $f(x)=3$ 的两个实根之积为1}{对任意正数 $x,y$，均有 $f(x+y)>f(x)+f(y)$}
+\SectionTitle{三、填空题（共3题，每题5分，共15分）}
+\Question{等差数列 $\{a_n\}$ 满足 $a_3=7$，$a_7=19$，则 $a_{10}=$\Blank。}
+\Question{直线 $x-y+c=0$ 与圆 $x^2+y^2=8$ 相切，且 $c>0$，则 $c=$\Blank。}
+\Question{甲、乙等5名同学排成一排，每种排列等可能，要求甲、乙不相邻，则符合要求的不同排列共有\Blank{}种。}
+
+
+\clearpage
+\SectionTitle{四、解答题（共5题，共77分）}
+解答应写出文字说明、证明过程或演算步骤。
+\Question{\Points{13}四棱锥 $S-ABCD$ 的底面 $ABCD$ 是边长为 $\PyramidEdge$ 的正方形，$SA\perp$ 平面 $ABCD$，$SA=\PyramidEdge$。}
+\begin{center}
+\begin{tikzpicture}[scale=.76]
+\coordinate (A) at (0,0); \coordinate (B) at (\PyramidEdge,0);
+\coordinate (D) at ({.44*\PyramidEdge},{.34*\PyramidEdge});
+\coordinate (C) at ({1.44*\PyramidEdge},{.34*\PyramidEdge});
+\coordinate (S) at (0,\PyramidEdge);
+\draw[densely dashed] (A)--(D)--(C) (S)--(D);
+\draw[thick] (S)--(A)--(B)--(C)--cycle (S)--(B);
+\foreach \pt/\loc in {A/below left,B/below,C/right,D/above right,S/above}
+  \node[\loc] at (\pt) {\scriptsize $\pt$};
+\end{tikzpicture}
+\end{center}
+\begin{Subquestions}
+\item 证明：$BC\perp$ 平面 $SAB$；
+\item 求点 $A$ 到平面 $SBC$ 的距离；
+\item 求直线 $SD$ 与平面 $SBC$ 所成角的正弦值。
+\end{Subquestions}
+\Question{\Points{15}某实验室有甲、乙两台检测仪。对一个样品，甲给出正确结论的概率为 $\dfrac45$，乙给出正确结论的概率为 $\dfrac34$。两台仪器的结果是否正确相互独立，不同样品的检测也相互独立。}
+\begin{Subquestions}
+\item 对一个样品，两台仪器均检测，求至少一台给出正确结论的概率；
+\item 已知至少一台给出正确结论，求两台均给出正确结论的条件概率；
+\item 对3个样品逐个检测，每个样品先由甲检测，若甲的结论不正确，再由乙检测。这里假设每次检测后有独立的标准程序即时判断结论是否正确，标准程序不计入仪器检测次数。设两台仪器的总检测次数为 $T$，求 $T$ 的分布列及数学期望。
+\end{Subquestions}
+\Question{\Points{15}椭圆 $C$ 的焦点为 $F_1(-1,0)$，$F_2(1,0)$，且经过点 $(0,\sqrt3)$。过 $F_2$ 的任意直线与椭圆交于 $A,B$ 两点。}
+\begin{Subquestions}
+\item 求椭圆方程；
+\item 证明：$\dfrac1{|F_2A|}+\dfrac1{|F_2B|}=\dfrac43$；
+\item 求三角形 $OAB$ 面积的最大值，其中 $O$ 为坐标原点。
+\end{Subquestions}
+
+\Question{\Points{17}数列 $\{a_n\}$ 满足 $a_1=1$，$a_{n+1}=2a_n+2^n$，$n\in\mathbb N^*$。记 $S_n=\sum_{k=1}^{n}a_k$。}
+\begin{Subquestions}
+\item 求 $a_n$；
+\item 求 $S_n$；
+\item 求所有使 $S_n\geq\lambda n^3$ 对任意正整数 $n$ 恒成立的实数 $\lambda$。
+\end{Subquestions}
+
+\clearpage
+\Question{\Points{17}设 $f_a(x)=x\ln x-ax+1$，$x>0$，$a\in\mathbb R$。}
+\begin{Subquestions}
+\item 当 $a=1$ 时，求 $f_a(x)$ 的最小值；
+\item 讨论 $f_a(x)$ 在 $(0,+\infty)$ 内的不同零点个数；
+\item 若 $f_a(x)$ 有两个不同零点 $u,v$，且 $u<v$，证明：$uv>1$，并由此证明 $u+v>2$。
+\end{Subquestions}

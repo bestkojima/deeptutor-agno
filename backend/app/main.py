@@ -77,13 +77,19 @@ def execute(task_id):
             from .agno_adapter import run_agno
             result=run_agno(capability,inputs,emit)
             if capability!='exam': result=verify_grounding(result,inputs.get('sources',[])+result.get('retrieved_sources',[]))
-            if capability=='quiz': validate_quiz(result)
+            if capability=='quiz' and result.get('quiz_status', {}).get('status') != 'failed': validate_quiz(result)
             if capability=='exam':
                 from .exam_blueprint import validate_generated_exam
                 validate_generated_exam(inputs['blueprint'],result.get('exam',result))
         if capability=='quiz':
-            for item in result['items']:
-                emit('quiz.question',item)
+            if result.get('quiz_status', {}).get('status') == 'failed':
+                reason = 'No quiz questions passed generation and review.'
+                emit('result',result); status(task_id,'failed',result,reason)
+                emit('error',{'message':reason}); emit('run.completed',{'status':'failed'})
+                return
+            if request['provider']=='fake':
+                for item in result['items']:
+                    emit('quiz.question',item)
         if capability=='exam':
             from .exam_blueprint import render_exam
             canonical={key:result[key] for key in ('version','title','duration_minutes','total_points','output_format','instructions','style_descriptors','sections','seed','answer_key')}
@@ -106,7 +112,28 @@ def launch(task_id): threading.Thread(target=execute,args=(task_id,),daemon=True
 @app.get('/api/capabilities')
 def capabilities():
     installed=importlib.util.find_spec('agno') is not None
-    return {'capabilities':[{'id':c,'label':c.replace('_',' ').title(),'available':True} for c in CAPABILITIES], 'providers':{'fake':{'available':True,'reason':'Deterministic fixtures, not model-generated content'},'agno':{'available':installed and bool(os.getenv('OPENAI_API_KEY')),'reason':'Requires Agno and server-side OPENAI_API_KEY; no API key requested by this app'}},'limits':{'ingestion':'Supply extracted document text or timestamped transcripts; raw PDF/audio/video extraction is not implemented','manim':'Disabled until isolated renderer is configured','memory':'Reserved hooks only; no personalization','security':'Local single-user only. Bind 127.0.0.1; no multi-user authentication.'}}
+    return {'capabilities':[{'id':c,'label':c.replace('_',' ').title(),'available':True} for c in CAPABILITIES], 'providers':{'fake':{'available':True,'reason':'Deterministic fixtures, not model-generated content'},'agno':{'available':installed and bool(os.getenv('OPENAI_API_KEY')),'reason':'Requires Agno and server-side OPENAI_API_KEY; no API key requested by this app'}},'limits':{'ingestion':'Supply excerpts or import VTT/SRT; raw PDF/audio/video extraction is not implemented','manim':'Disabled until isolated renderer is configured','memory':'Reserved hooks only; no personalization','security':'Local single-user only. Bind 127.0.0.1; no multi-user authentication.'}}
+
+@app.post('/api/visualize/plot')
+def compute_plot(spec: dict):
+    from .visualize import render_function_graph
+    try:
+        return render_function_graph(spec)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+@app.post('/api/sources/captions')
+async def ingest_captions(request: Request, filename: str):
+    from .source_ingestion import IngestionError, MAX_BYTES, ingest_source
+    data = bytearray()
+    async for chunk in request.stream():
+        if len(data) + len(chunk) > MAX_BYTES:
+            raise HTTPException(413, 'Caption upload exceeds 2 MB')
+        data.extend(chunk)
+    try:
+        return {'sources': ingest_source(bytes(data), filename=filename), 'transcribed': False}
+    except IngestionError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 @app.post('/api/exam/blueprint')
 def exam_blueprint(body:BlueprintRequest):
@@ -125,7 +152,7 @@ def exam_blueprint(body:BlueprintRequest):
 def create_task(body:TaskRequest):
     if body.capability not in CAPABILITIES: raise HTTPException(422,'Unknown capability')
     if len(json.dumps(body.inputs))>2_000_000: raise HTTPException(413,'Inputs exceed 2 MB limit')
-    if {'answers','confirmed_outline','outline_revision'} & body.inputs.keys():
+    if {'answers','clarification','confirmed_outline','outline_revision'} & body.inputs.keys():
         raise HTTPException(422,'Confirmation fields can only be supplied through the resume endpoint')
     if body.provider=='agno' and (not os.getenv('OPENAI_API_KEY') or importlib.util.find_spec('agno') is None):
         raise HTTPException(503,'Agno and server-side model credentials must be configured')

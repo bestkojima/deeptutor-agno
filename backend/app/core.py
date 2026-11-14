@@ -48,13 +48,93 @@ def verify_grounding(result, sources):
     return result
 
 def validate_quiz(result):
-    items=result.get('items',[])
-    if not items: raise ValueError('Quiz requires items')
+    """Validate bounded quiz structure, not semantic correctness or grading.
+
+    Types: single_choice (the legacy default), multiple_choice, short_answer,
+    fill_blank. Choice answers use zero-based indices. Short answers use answer
+    and optional accepted_answers. Fill blanks use {{id}} markers in question
+    and an ordered blanks list of {id, answer, accepted_answers?} objects.
+    This validator does not mutate input or evaluate answer expressions.
+    """
+    def text(value, label, limit=10000):
+        if not isinstance(value, str) or not value.strip() or len(value) > limit:
+            raise ValueError(label + ' must be nonempty bounded text')
+        return value.strip().casefold()
+
+    def aliases(record):
+        text(record.get('answer'), 'Answer')
+        if 'accepted_answers' in record:
+            values = record['accepted_answers']
+            if not isinstance(values, list) or not 1 <= len(values) <= 20:
+                raise ValueError('accepted_answers requires 1–20 text alternatives')
+            normalized = [text(value, 'Accepted answer') for value in values]
+            if len(set(normalized)) != len(normalized):
+                raise ValueError('Accepted answers must be distinct')
+
+    if not isinstance(result, dict):
+        raise ValueError('Quiz must be an object')
+    items = result.get('items')
+    if not isinstance(items, list) or not 1 <= len(items) <= 50:
+        raise ValueError('Quiz requires 1–50 items')
+    ids = set()
     for item in items:
-        options=item.get('options',[])
-        if len(options)<2 or len(options)!=len(set(options)): raise ValueError('Distinct options required')
-        if type(item.get('answer_index')) is not int or not 0<=item['answer_index']<len(options): raise ValueError('Invalid answer key')
-        if not item.get('explanation'): raise ValueError('Explanation required')
+        if not isinstance(item, dict):
+            raise ValueError('Each quiz item must be an object')
+        question = item.get('question')
+        text(question, 'Question')
+        text(item.get('explanation'), 'Explanation')
+        if 'id' in item:
+            identity = text(item['id'], 'Item ID', 100)
+            if identity in ids:
+                raise ValueError('Quiz item IDs must be unique')
+            ids.add(identity)
+        kind = item.get('type', 'single_choice')
+        if kind not in ('single_choice', 'multiple_choice', 'short_answer', 'fill_blank'):
+            raise ValueError('Unsupported quiz type')
+        allowed_answers = {
+            'single_choice': {'answer_index'},
+            'multiple_choice': {'answer_indices'},
+            'short_answer': {'answer', 'accepted_answers'},
+            'fill_blank': {'blanks'},
+        }[kind]
+        answer_fields = {'answer_index', 'answer_indices', 'answer', 'accepted_answers', 'blanks'}
+        if (set(item) & answer_fields) - allowed_answers:
+            raise ValueError('Answer fields conflict with quiz type')
+        if kind in ('single_choice', 'multiple_choice'):
+            options = item.get('options')
+            if not isinstance(options, list) or not 2 <= len(options) <= 20:
+                raise ValueError('Choice items require 2–20 options')
+            normalized = [text(option, 'Option', 4000) for option in options]
+            if len(set(normalized)) != len(options):
+                raise ValueError('Distinct options required')
+            answers = [item.get('answer_index')] if kind == 'single_choice' else item.get('answer_indices')
+            if not isinstance(answers, list) or not 1 <= len(answers) <= len(options):
+                raise ValueError('A nonempty answer key is required')
+            if any(type(index) is not int or not 0 <= index < len(options) for index in answers):
+                raise ValueError('Invalid answer key')
+            if len(set(answers)) != len(answers):
+                raise ValueError('Answer indices must be unique')
+        else:
+            if 'options' in item:
+                raise ValueError('Non-choice items must not contain options')
+            if kind == 'short_answer':
+                aliases(item)
+            else:
+                blanks = item.get('blanks')
+                if not isinstance(blanks, list) or not 1 <= len(blanks) <= 20:
+                    raise ValueError('Fill items require 1–20 blanks')
+                blank_ids = []
+                for blank in blanks:
+                    if not isinstance(blank, dict) or set(blank) - {'id', 'answer', 'accepted_answers'}:
+                        raise ValueError('Invalid blank record')
+                    identity = blank.get('id')
+                    if not isinstance(identity, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,39}', identity):
+                        raise ValueError('Invalid blank ID')
+                    blank_ids.append(identity)
+                    aliases(blank)
+                markers = re.findall(r'\{\{([^{}]*)\}\}', question)
+                if len(set(blank_ids)) != len(blank_ids) or markers != blank_ids:
+                    raise ValueError('Each blank requires one matching {{id}} marker in list order')
     return result
 
 def fake_run(capability, inputs, emit):

@@ -2,14 +2,28 @@
 import json
 import os
 import re
+from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Card(BaseModel):
     id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,40}$")
     question: str = Field(min_length=1, max_length=400)
     required: bool = True
+    type: Literal["text", "single_choice"] = "text"
+    options: list[str] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="after")
+    def validate_options(self):
+        if self.type == "text" and self.options:
+            raise ValueError("Text cards cannot offer preset options")
+        if self.type == "single_choice" and (
+            len(self.options) < 2 or len(set(self.options)) != len(self.options)
+            or any(not option.strip() or len(option) > 120 for option in self.options)
+        ):
+            raise ValueError("Choice cards require 2–8 distinct nonempty options")
+        return self
 
 
 class Clarification(BaseModel):
@@ -43,7 +57,7 @@ def prepare_preview(capability, inputs, provider, emit):
         instruction = (
             "Create a concrete research outline of 1–6 tasks. Do not research or answer yet."
             if capability == "research" else
-            "Ask only targeted clarification questions needed to complete the original task. Do not answer yet."
+            "Ask only targeted clarification questions needed to complete the original task. Do not answer yet. Use single_choice and list options when a bounded choice makes sense; otherwise use text."
         )
         emit("step.started", {"name": "outline_preview" if capability == "research" else "clarify"})
         agent = Agent(model=OpenAIChat(id=os.getenv("AGNO_MODEL", "gpt-4.1-mini"),
@@ -56,7 +70,7 @@ def prepare_preview(capability, inputs, provider, emit):
         value = raw if isinstance(raw, schema) else schema.model_validate_json(raw) if isinstance(raw, str) else schema.model_validate(raw)
         emit("step.completed", {"name": "outline_preview" if capability == "research" else "clarify"})
         if capability == "ask_questions":
-            return {"questions": [dict(card.model_dump(), type="text") for card in value.questions], "context": prompt}
+            return {"questions": [card.model_dump() for card in value.questions], "context": prompt}
         tasks = value.tasks
     elif capability == "ask_questions":
         return {"questions": [
@@ -77,7 +91,15 @@ def confirmed_inputs(capability, stored, answers):
         raise ValueError("Answer contains an unknown question ID")
     if any(q.get("required") and not answers.get(q["id"], "").strip() for q in questions):
         raise ValueError("All required questions need an answer")
+    for q in questions:
+        if q.get("type") == "single_choice" and q["id"] in answers and answers[q["id"]] not in q.get("options", []):
+            raise ValueError("Choice response must match an offered option")
     out = {"answers": answers}
+    if capability == "ask_questions":
+        out["clarification"] = [
+            {"question": q["question"], "answer": answers[q["id"]]}
+            for q in questions if q["id"] in answers
+        ]
     if capability == "research":
         out["confirmed_outline"] = stored["outline"]
         revision = answers.get("goal", "").strip()

@@ -1,0 +1,46 @@
+% !TeX program = xelatex
+\documentclass[11pt,a4paper]{article}
+\usepackage[student]{exam-layout}
+\usepackage{tikz}
+% Data and examples live here, not in exam-layout.sty.
+\newcommand{\ShiftX}{2}
+\newcommand{\DepthY}{1}
+\renewcommand{\ExamHeader}{初三数学 · 二次函数}
+\begin{document}
+\ExamTitle{二次函数单元小测}{排版样张 · 非真题｜\ExamEdition}{20}{15}
+\ifExamAnswers
+  \SectionTitle{参考答案与评分提示}
+  \ExamAnswer{1}{A（5 分）。平方项在 $x=\ShiftX$ 时取最小值 $0$。}
+  \ExamAnswer{2}{$\ShiftX$（5 分）。}
+  \ExamAnswer{3}{%
+    （1）顶点为 $(\ShiftX,-\DepthY)$，对称轴为 $x=\ShiftX$（4 分）。\par
+    （2）令 $(x-\ShiftX)^2=\DepthY$，得
+    $x=\ShiftX-\sqrt{\DepthY}$
+    或 $x=\ShiftX+\sqrt{\DepthY}$（6 分）。}
+\else
+  \CandidateLine
+  \textbf{说明：}选择题选一个正确答案；解答题请写出必要步骤。
+  \SectionTitle{一、单项选择题（1 题，共 5 分）}
+  \Question{函数 $y=(x-\ShiftX)^2-\DepthY$ 的图像开口方向为 \ChoiceBox}
+  \Choices{向上}{向下}{向左}{向右}
+  \SectionTitle{二、填空题（1 题，共 5 分）}
+  \Question{函数 $y=(x-\ShiftX)^2-\DepthY$ 的对称轴为 $x=$ \Blank。}
+  \SectionTitle{三、解答题（1 题，共 10 分）}
+  \Question{\Points{10} 如图，抛物线对应的函数为 $y=(x-\ShiftX)^2-\DepthY$。}
+  \begin{center}
+  \begin{tikzpicture}[x=1.21cm,y=.66cm]
+    \draw[->] (-.65,0)--(4.8,0) node[right] {$x$};
+    \draw[->] (0,-1.65)--(0,3.6) node[above] {$y$};
+    \node[below left,inner sep=2pt] at (0,0) {$O$};
+    \draw[dashed] (\ShiftX,-1.45)--(\ShiftX,3.4);
+    \draw[domain=\ShiftX-2.05:\ShiftX+2.05,samples=80,thick,smooth]
+      plot (\x,{(\x-\ShiftX)^2-\DepthY});
+  \end{tikzpicture}
+  \end{center}
+  \begin{Subquestions}
+    \item 求顶点坐标与对称轴。（4 分）
+    \item 通过计算求抛物线与 $x$ 轴交点的横坐标。（6 分）
+  \end{Subquestions}
+  \AnswerBox[26mm]
+\fi
+\end{document}
