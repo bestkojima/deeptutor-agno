@@ -11,6 +11,10 @@ or only `exam.md` and `assets/diagram.svg`, not the entire bundle.
 
 ## Contract and boundary
 
+- Choice duplicate checks preserve mathematical signs, primes, case and
+  superscripts: `−1` and `1`, or `AC` and `AC′`, remain distinct. Textually
+  duplicate options are still rejected. This check does not prove equivalence
+  of different expressions such as `1/2` and `0.5`.
 - No `inputs.artifacts`: legacy behavior is unchanged, including fake fixtures.
 - `inputs.artifacts: {"version":1}`: export the validated canonical exam as-is;
   no diagram is invented and no model call is added.

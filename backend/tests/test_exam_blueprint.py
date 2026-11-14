@@ -92,7 +92,9 @@ class ExamContractTests(unittest.TestCase):
         self.reject(lambda e: e['sections'][0]['items'][0]['choices'].reverse())
         self.exam = deterministic_sample_exam(self.bp, 42)
         choices = self.exam['sections'][0]['items'][0]['choices']
-        choices[1]['text'] = choices[0]['text'].upper()
+        # Choice comparison preserves case because a and A can be distinct
+        # mathematical objects. Exact duplicates remain prohibited.
+        choices[1]['text'] = '  ' + choices[0]['text'] + '  '
         with self.assertRaises(BlueprintError):
             validate_generated_exam(self.bp, self.exam)
 
@@ -108,6 +110,39 @@ class ExamContractTests(unittest.TestCase):
             exam['answer_key'][0]['answer'] = 1
             with self.assertRaises(BlueprintError):
                 validate_generated_exam(bp, exam)
+
+    def test_math_choices_preserve_negative_and_positive_values(self):
+        for values in (("−1", "0", "1", "5"), ("−4", "−3", "−1", "1")):
+            with self.subTest(values=values):
+                exam = copy.deepcopy(self.exam)
+                for choice, value in zip(exam['sections'][0]['items'][0]['choices'], values):
+                    choice['text'] = value
+                validate_generated_exam(self.bp, exam)
+
+    def test_geometry_choices_preserve_prime_and_operators(self):
+        values = ("AC=2√2", "AC′=2√2", "AC⊥BD", "AC∥BD")
+        for choice, value in zip(self.exam['sections'][0]['items'][0]['choices'], values):
+            choice['text'] = value
+        validate_generated_exam(self.bp, self.exam)
+
+    def test_choices_preserve_superscripts_and_variable_case(self):
+        values = ("x²", "x2", "a", "A")
+        for choice, value in zip(self.exam['sections'][0]['items'][0]['choices'], values):
+            choice['text'] = value
+        validate_generated_exam(self.bp, self.exam)
+
+    def test_choice_duplicates_normalize_minus_and_whitespace(self):
+        for duplicate in ("−1", "  -1  ", "﹣1", "－1"):
+            with self.subTest(duplicate=duplicate):
+                exam = copy.deepcopy(self.exam)
+                choices = exam['sections'][0]['items'][0]['choices']
+                choices[0]['text'] = '-1'
+                choices[1]['text'] = duplicate
+                with self.assertRaises(BlueprintError):
+                    validate_generated_exam(self.bp, exam)
+
+    def test_choice_whitespace_only_rejected(self):
+        self.reject(lambda e: e['sections'][0]['items'][0]['choices'][0].update(text=' \t\n'))
 
     def test_duplicate_multiple_choice_answer(self):
         self.bp['sections'][0]['slots'][0]['type'] = 'multiple_choice'

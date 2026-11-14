@@ -73,6 +73,19 @@ def normalize_stem(stem):
     return "".join(c for c in unicodedata.normalize("NFKC", stem).casefold() if c.isalnum())
 
 
+def normalize_choice_text(text):
+    """Conservative textual duplicate check, not mathematical equivalence.
+
+    Unlike prose stem matching, signs, primes, case and superscripts affect
+    mathematics. NFC preserves them; NFKC/alphanumeric filtering does not.
+    Normalize whitespace and common minus glyphs only. Equivalent expressions
+    such as 1/2 and 0.5 still require the independent mathematical reviewer.
+    """
+    _text(text, "choice.text")
+    return " ".join(unicodedata.normalize("NFC", text).split()).translate(
+        str.maketrans({"−": "-", "﹣": "-", "－": "-"}))
+
+
 def validate_blueprint(blueprint):
     _keys(blueprint, "version title duration_minutes total_points output_format instructions style_descriptors sections", "blueprint")
     _check(type(blueprint["version"]) is int and blueprint["version"] == 1, "unsupported blueprint version")
@@ -176,7 +189,7 @@ def validate_generated_exam(blueprint, exam, prior_stems=()):
             for choice, label in zip(choices, slot["choice_labels"]):
                 _keys(choice, "label text", "choice")
                 _check(choice["label"] == label, "choice label/order mismatch")
-                normalized = normalize_stem(choice["text"])
+                normalized = normalize_choice_text(choice["text"])
                 _check(normalized and normalized not in option_texts, "empty or duplicate choice text")
                 option_texts.add(normalized)
             identities.append((section["id"], slot))
