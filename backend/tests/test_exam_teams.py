@@ -22,7 +22,7 @@ def blueprint():
     return b
 
 class NativeExamTeamsTests(unittest.TestCase):
-    def execute(self, *, reject_once=False, no_delegation=False, foreign_slot=False, reject_always=False, leader_rewrite=False, bp=None, unauthorized=False, single_multi=False):
+    def execute(self, *, reject_once=False, no_delegation=False, foreign_slot=False, reject_always=False, leader_rewrite=False, bp=None, unauthorized=False, single_multi=False, split_short_answer=False):
         from agno.models.openai import OpenAIChat
         counts=Counter(); wire=[]; events=[]
         def response(request):
@@ -39,13 +39,21 @@ class NativeExamTeamsTests(unittest.TestCase):
                     scope=json.JSONDecoder().raw_decode(system[pos:])[0]
             prior_tools=any(m['role']=='tool' for m in body['messages'])
             message={'role':'assistant','content':None}
-            if (is_chief or is_type) and not prior_tools and not no_delegation:
+            tool_count=sum(m['role']=='tool' for m in body['messages'])
+            needs_geometry=split_short_answer and is_type and scope['slots'][0]['type']=='short_answer' and tool_count==1
+            if (is_chief or is_type) and (not prior_tools or needs_geometry) and not no_delegation:
                 self.assertEqual(body['reasoning_effort'],'none')
                 if is_chief:
                     name='delegate_task_to_members'; args={'task':'Create only your assigned slots, use your system scope.'}
                 else:
                     kind=scope['slots'][0]['type'];name='delegate_task_to_member'
-                    args={'member_id':'unauthorized-member' if unauthorized else 'exam-type-'+kind+'-algebra','task':'Create the assigned slots from your system scope.'}
+                    role='geometry' if needs_geometry else 'algebra'
+                    args={'member_id':'unauthorized-member' if unauthorized else 'exam-type-'+kind+'-'+role,'task':'Create the assigned slots from your system scope.'}
+                    if needs_geometry:
+                        tool_result=next(m['content'] for m in body['messages'] if m['role']=='tool')
+                        returned=[i['number'] for i in json.JSONDecoder().raw_decode(tool_result[tool_result.index('{'):])[0]['items']]
+                        self.assertEqual(returned,['17','18','19'])
+                        args['task']='Only missing slots: solve:15, solve:16.'
                 self.assertIn(name,tools)
                 message['tool_calls']=[{'id':'call_'+str(len(wire)),'type':'function','function':{'name':name,'arguments':json.dumps(args)}}]
             else:
@@ -72,6 +80,10 @@ class NativeExamTeamsTests(unittest.TestCase):
                     self.assertIsNotNone(scope,system)
                     items=[]
                     for slot in scope['slots']:
+                        if split_short_answer and slot['type']=='short_answer':
+                            geometry='Geometry, vectors and trigonometry question designer' in system
+                            if (slot['number'] in ('15','16')) != geometry:
+                                continue
                         counts[slot['number']]+=1
                         items.append({'section_id':slot['section_id'],'number':'99' if foreign_slot else slot['number'],
                             'stem':'Question '+slot['number']+' attempt '+str(counts[slot['number']]),
@@ -105,6 +117,28 @@ class NativeExamTeamsTests(unittest.TestCase):
         self.assertEqual([d['number'] for k,d in events if k=='exam.slot.retrying'],['2'])
         self.assertIn('attempt 1',result['sections'][0]['items'][0]['stem'])
         self.assertIn('attempt 2',result['sections'][1]['items'][0]['stem'])
+
+    def test_leader_prompt_survives_partial_result_and_native_followup(self):
+        from pathlib import Path
+        fixture=json.loads((Path(__file__).parents[2]/'examples/exam-artifacts/gaokao-i-2026-structure.json').read_text())
+        b=fixture['inputs']['blueprint']
+        result,counts,events,wire=self.execute(bp=b,split_short_answer=True)
+        lead=['\n'.join(m.get('content') or '' for m in r['messages'] if m['role'] in ('developer','system'))
+              for r in wire if any('leader of the short_answer question-type team' in (m.get('content') or '') for m in r['messages'] if m['role'] in ('developer','system'))]
+        self.assertEqual(len(lead),3)
+        for prompt in lead:
+            self.assertIn('compare required vs received',prompt.lower())
+            self.assertIn('ONLY the missing slots',prompt)
+            self.assertIn('is RECEIVED even if you suspect its math',prompt)
+            self.assertIn('If MISSING is empty, stop delegating immediately.',prompt)
+            self.assertIn('Leave all correctness, option quality, difficulty and scoring decisions to the independent reviewer.',prompt)
+            self.assertIn('"off-target" means it did not return the requested slot IDs',prompt)
+            self.assertIn('exam-type-short_answer-geometry',prompt)
+            self.assertIn('Required slot IDs for this run (section_id:number) = ["solve:15", "solve:16", "solve:17", "solve:18", "solve:19"]',prompt)
+        self.assertEqual([d['member'] for k,d in events if k=='exam.delegation.started' and d['team']=='short_answer'],
+                         ['exam-type-short_answer-algebra','exam-type-short_answer-geometry'])
+        self.assertEqual([counts[str(i)] for i in range(15,20)],[1]*5)
+        self.assertEqual(len(result['answer_key']),19)
 
     def test_claimed_delegation_without_member_calls_fails(self):
         with self.assertRaises(ValueError):

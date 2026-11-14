@@ -20,6 +20,18 @@ flowchart TD
 - **合卷和导出是后端职责。** 输出边界与旧版相同。学生 PDF/Markdown 不含答案，不执行模型提供的 TeX；受控图形模板和任意图形题是两件事。记忆和个性化尚未接入。
 - **前端只消费进度。** SSE 记录委派、组任务、题位状态与复验进度，不将模型推理、口令或答案作为轨迹事件。
 
+## 提示词怎么约束 Leader 收尾
+
+参照 DeepTutor v1.7.2 的 [规划提示](https://github.com/HKUDS/DeepTutor/blob/60fb3bdfddb30b7740c7ce3bd9b28d908f2af6db/deeptutor/agents/question/prompts/zh/pipeline.yaml#L130-L169)、[逐题提示](https://github.com/HKUDS/DeepTutor/blob/60fb3bdfddb30b7740c7ce3bd9b28d908f2af6db/deeptutor/agents/question/prompts/zh/pipeline.yaml#L174-L246)和[修复流程](https://github.com/HKUDS/DeepTutor/blob/60fb3bdfddb30b7740c7ce3bd9b28d908f2af6db/deeptutor/agents/question/pipeline.py#L939-L991)。DeepTutor 把题量、题型和难度写进模板契约；代码逐个执行模板，单题格式不合规时，把当前模板、原输出和具体问题发给修复阶段。它的 Quiz 可以在规划题量不足时提示并继续，不等于严格整卷。
+
+我们的 [Team 提示文件](../backend/app/prompts/exam/)按角色独立维护，由 [Team 编排](../backend/app/exam_teams.py)载入，只借鉴职责、待办清单和反馈范围，不引入 DeepTutor 的自定义协议：
+
+1. **主编转达给题型 Leader**，要求每组对整个题位清单负责。出题员才是只写分到自己手里的题。
+2. **每组有固定待办与直属成员 ID**。例如解答组应收 `solve:15` 至 `solve:19`，一份派工任务写清相应题位。
+3. **每次工具返回就核对实收题位**。如果先收到了 17、18、19，只补派 15、16；不能把工具成功或一份成员回复当成整个队的完成。Leader 对照的是题号，不以选项、难度或答案质量判定缺题；收到题号就不再派，质量由独立复核阶段处理。工具用尽仍有缺题，模型应返回未完成。
+
+完成校验仍由原有的后端逻辑负责。提示词不是硬约束，也不提供跨任务恢复。项目不修改 Agno 框架，不手工补题。用原生 Team 和模拟 HTTP 验证提示确实出现在收到部分结果后的下一轮，并验证该模拟可以再派缺题；不能据此宣称真实 Luna 一定遵循。
+
 ## 默认高考命题梯度
 
 [版本化策略与提示词](../backend/app/exam_difficulty.py)负责分配，团队和返工由 [exam_teams.py](../backend/app/exam_teams.py) 执行。对 8/3/3/5 的参考体例，按各题型内的顺序安排，不改变题型、分值、题号或 canonical 输出：

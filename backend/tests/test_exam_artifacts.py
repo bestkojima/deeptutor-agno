@@ -118,8 +118,8 @@ class ExamArtifactSafetyTests(unittest.TestCase):
         self.assertNotIn(r'\input{',tex_text('⁵'+r'\input{secret}'))
         self.exam['sections'][0]['items'][0]['stem']='求(1+2x)⁵及aₙ的值。'
         docs=render_documents(self.exam,None)
-        self.assertIn(r'\textsuperscript{5}',docs['student.tex'])
-        self.assertIn(r'\textsubscript{n}',docs['student.tex'])
+        self.assertIn(r'^{5}',docs['student.tex'])
+        self.assertIn(r'_{n}',docs['student.tex'])
         self.assertIn('⁵',docs['exam.md']);self.assertIn('ₙ',docs['exam.md'])
     def test_same_tikz_source_and_student_answer_separation(self):
         from app.exam_artifacts import prepare_canonical,render_documents,tikz_fragment
@@ -130,6 +130,60 @@ class ExamArtifactSafetyTests(unittest.TestCase):
         self.assertNotIn('Area =',docs['student.tex']);self.assertNotIn('Area =',docs['exam.md'])
         self.assertIn('Area =',docs['answers.tex']);self.assertIn('Area =',docs['answers.md'])
         self.assertIn('OFFLINE FIXTURE',self.exam['sections'][0]['items'][0]['stem'])
+    def test_paragraphs_math_allowlist_and_root_scope(self):
+        from app.exam_artifacts import tex_paragraphs,md_paragraphs
+        self.assertIn(r'\par ',tex_paragraphs('第一步。\n第二步。'))
+        self.assertIn('\n\n',md_paragraphs('第一步。\n第二步。'))
+        self.assertIn(r'\sqrt{g(t)}',tex_paragraphs('故√g(t)为正。'))
+        self.assertIn(r'\sqrt{(1+x)(1-x)}',tex_paragraphs('求√((1+x)(1-x))。'))
+        for poison in [r'\input{x}',r'\write18{x}',r'$\include{x}$']:
+            result=tex_paragraphs('题目'+poison)
+            self.assertNotIn(poison,result)
+        self.assertNotIn('\n<script>',md_paragraphs('首行\n<script>'))
+        self.assertIn('√(x',tex_paragraphs('未闭合√(x'))
+
+    def test_choice_columns_and_profile_fallback(self):
+        from app.exam_artifacts import choice_layout,compact_profile
+        choices=[{'label':c,'text':'x²'} for c in 'ABCD']
+        self.assertTrue(choice_layout(choices)[0].startswith(r'\Choices'))
+        choices[0]['text']='长'*20
+        self.assertTrue(choice_layout(choices)[0].startswith(r'\LongChoices'))
+        choices[0]['text']='长'*60
+        rows=choice_layout(choices)
+        self.assertTrue(rows[0].startswith(r'\begin{list}'))
+        self.assertEqual(sum(row.startswith(r'\item[') for row in rows),4)
+        sections=[]
+        for count,kind in [(8,'single_choice'),(3,'multiple_choice'),(3,'fill_blank'),(5,'short_answer')]:
+            sections.append({'items':[{'type':kind,'stem':'题目','choices':[]} for _ in range(count)]})
+        exam={'total_points':150,'sections':sections}
+        self.assertTrue(compact_profile(exam,None))
+        self.assertFalse(compact_profile(exam,{'template':'fixture'}))
+        exam['sections'][0]['items'][0]['stem']='长'*2000
+        self.assertFalse(compact_profile(exam,None))
+
+    def test_sentence_options_are_printed_as_vertical_list(self):
+        from app.exam_artifacts import choice_layout
+        choices=[{'label':letter,'text':text} for letter,text in zip('ABCD',[
+            'P(Y=1)≤1/2，当且仅当两类对象概率相同才取等号',
+            '存在参数t使得Y服从某种分布，且需要满足相应条件',
+            '任意满足这些条件的分布，均满足下面的不等式',
+            '当参数为正时结论成立。\n还要核对边界。'])]
+        rows=choice_layout(choices)
+        self.assertTrue(rows[0].startswith(r'\begin{list}'))
+        self.assertEqual(rows[-1],r'\end{list}')
+        self.assertEqual(len(rows),6)
+        for letter,row in zip('ABCD',rows[1:-1]):
+            self.assertTrue(row.startswith(r'\item[{\textbf{'+letter+'.}}] '))
+        self.assertIn(r'\par ',rows[-2])
+
+    def test_compiler_rejects_overflow_before_publish(self):
+        from app.exam_artifacts import _compile_pdf
+        with tempfile.TemporaryDirectory() as tmp,patch('app.exam_artifacts.shutil.which',return_value='/usr/bin/xelatex'),patch('app.exam_artifacts._run'):
+            directory=Path(tmp);(directory/'student.pdf').write_bytes(b'%PDF-1.4')
+            for message in [r'Overfull \hbox (3.2pt too wide)',r'Overfull \vbox (10.0pt too high)','Missing character: missing']:
+                (directory/'student.log').write_text(message)
+                with self.assertRaisesRegex(RuntimeError,'layout overflow or missing glyph'):_compile_pdf(directory,'student')
+
     def test_resolver_rejects_symlinks_and_unpublished(self):
         from app.exam_artifacts import resolve_artifact
         with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{'TUTOR_EXAM_ARTIFACTS':tmp}):

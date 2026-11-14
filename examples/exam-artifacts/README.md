@@ -4,10 +4,11 @@
 POST it to `/api/tasks`. Poll the existing task and read `result.artifacts.files`.
 Each entry has a relative allowlisted download URL. `bundle.zip` contains TeX
 sources, the shipped `examples/latex-gaokao-i-2026/exam-layout.sty`, student PDF,
-answer PDF, `exam.md`, `answers.md`, `canonical.json`, and the exact TikZ-derived
-`assets/diagram.svg`. Markdown uses that relative path and works offline when the
-ZIP is extracted. The full bundle includes answers: give students `student.pdf`
-or only `exam.md` and `assets/diagram.svg`, not the entire bundle.
+answer PDF, `exam.md`, `answers.md`, and `canonical.json`. When the trusted
+geometry example is enabled, the bundle also includes the exact TikZ-derived
+`assets/diagram.svg`, referenced by relative path in Markdown. The full bundle
+includes answers: give students `student.pdf` or only `exam.md` and its SVG when
+present, not the entire bundle.
 
 ## Contract and boundary
 
@@ -26,10 +27,16 @@ or only `exam.md` and `assets/diagram.svg`, not the entire bundle.
 - Geometry labels, both PDF diagrams, and the Markdown SVG come from the same
   numeric record and trusted TikZ fragment. SVG is converted from the diagram-only
   PDF with Poppler; it is not a separately drawn approximation.
-- Model/user text, including LaTeX-like formulas, is escaped **literally**. This
-  version does not interpret arbitrary math markup or compile supplied TeX.
-  A small fixed glyph mapping preserves supported Unicode subscripts and
-  superscripts in CJK PDFs even when the selected font has no matching glyph.
+- The exporter preserves paragraphs. Short options can use compact columns;
+  long options and Chinese sentences with clauses are stacked, one label per
+  row with wrapped lines aligned to the option body. Answers and explanations
+  are separate.
+- PDF uses a fixed, allowlisted conversion for supported mathematical notation
+  such as Unicode subscripts and superscripts. Unsupported expressions stay
+  literal and escaped. The renderer does not compile model-supplied LaTeX.
+- Compact reference papers with an 8/3/3/5 section layout can use the four-page
+  student profile, with space for written work. Other layouts use ordinary
+  pagination; the content contract does not promise four pages for every exam.
 - Markdown escapes HTML and arbitrary image/link syntax. Only the trusted relative
   SVG image is emitted. No remote resources or model executable code are used.
 - The artifact directory is atomically renamed into place only after all outputs
@@ -37,6 +44,9 @@ or only `exam.md` and `assets/diagram.svg`, not the entire bundle.
   manifest or links are published. Download filenames are exact allowlisted paths.
 - XeLaTeX runs with `-no-shell-escape`, bounded timeouts, fixed entrypoint names and
   a small allowlisted environment. App/provider secrets are not inherited.
+  A report of a missing glyph or a box overflowing by more than 2 pt fails the
+  export before publication. This catches common clipping problems; it is not
+  a substitute for visual checks when introducing a new template.
 
 ## Dependencies and tests
 

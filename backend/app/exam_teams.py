@@ -7,15 +7,23 @@ import asyncio
 from copy import deepcopy
 import json
 import os
+from pathlib import Path
+from string import Template
 from threading import RLock
 from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 from .exam_blueprint import generation_contract, validate_generated_exam
-from .exam_difficulty import difficulty_targets, AUTHOR_RULES, REVIEW_RULES
+from .exam_difficulty import difficulty_targets
 
 MAX_SLOTS = 30
 MAX_TYPES = 6
 MAX_ATTEMPTS = 2
+PROMPT_ROOT = Path(__file__).with_name('prompts') / 'exam'
+PROMPT_ROLES = ('chief', 'type-leader', 'designer', 'blind-solver', 'reviewer')
+
+
+def load_exam_prompts():
+    return {role: (PROMPT_ROOT / f'{role}.md').read_text(encoding='utf-8').strip() for role in PROMPT_ROLES}
 
 class Choice(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -95,6 +103,7 @@ def run_exam_teams(inputs, emit):
         raise ValueError('Exam Team limit: at most 30 slots and 6 types per run')
     if inputs.get('tools'):
         raise ValueError('Exam Teams use only native delegation; custom tools are not supported')
+    prompts = load_exam_prompts()
     lock, drafts, accepted = RLock(), {}, {}
     failures = []
     def event(kind, data):
@@ -110,9 +119,7 @@ def run_exam_teams(inputs, emit):
         team_id = 'exam-type-' + kind
         members = [Agent(id=team_id+'-'+name, name=team_id+'-'+name, role=role,
                          model=_model(), output_schema=DraftBatch, use_json_mode=True, telemetry=False,
-                         instructions=['Create only the assigned slots. Return JSON items with section_id, number, stem, choices, answer, explanation.',
-                                       'Use the locked slot metadata. Never include answers in stems. Return complete derivations, not placeholders.',
-                                       *AUTHOR_RULES,
+                         instructions=[prompts['designer'],
                                        json.dumps({**packet(keys, feedback), 'previous_draft': previous_draft}, ensure_ascii=False)])
                    for name, role in [('algebra','Algebra, functions, sequences and probability question designer'),
                                       ('geometry','Geometry, vectors and trigonometry question designer')]]
@@ -125,10 +132,9 @@ def run_exam_teams(inputs, emit):
             return result
         team = Team(id=team_id, name=team_id, model=_model(with_tools=True), members=members, telemetry=False,
                     output_schema=LeaderAck, use_json_mode=True, tool_call_limit=max(2, len(keys)), tool_hooks=[hook],
-                    instructions=['You are the leader of the '+kind+' question-type team. Delegate every assigned slot to a direct designer using delegate_task_to_member.',
-                                  'Choose algebra or geometry specialist for each slot; one delegation may assign multiple related slots.',
-                                  'Return only a brief JSON acknowledgement {"completed":true} after delegation, never reprint the question bodies.',
-                                  'Ignore assignments for other question types. Do not change locked metadata or slot.difficulty; pass every repair correction to the responsible designer.', json.dumps(packet(keys, feedback), ensure_ascii=False)])
+                    instructions=[Template(prompts['type-leader']).substitute(
+                        kind=kind, required_slots=json.dumps([f'{section}:{number}' for section, number in keys]),
+                        member_ids=', '.join(sorted(allowed))), json.dumps(packet(keys, feedback), ensure_ascii=False)])
         return team
 
     def member_drafts(output, team, keys):
@@ -161,9 +167,7 @@ def run_exam_teams(inputs, emit):
         chief = Team(id='exam-chief', name='exam-chief', model=_model(with_tools=True), members=groups,
                      delegate_to_all_members=True, tool_call_limit=1, tool_hooks=[chief_hook],
                      telemetry=False, output_schema=LeaderAck, use_json_mode=True,
-                     instructions=['Delegate once to all your direct question-type Teams using delegate_task_to_members. Each leader already has its locked slots.',
-                                   'Pass the request and common style requirements; do not design questions yourself or override team slot ownership.',
-                                   'After delegation return only {"completed":true}; backend assembles the designers output, not your text.'])
+                     instructions=[prompts['chief']])
         for kind, keys in scopes.items():
             event('exam.team.started', {'team': kind, 'total': len(keys)})
         response = await chief.arun(json.dumps(packet(list(slots)), ensure_ascii=False))
@@ -197,10 +201,10 @@ def run_exam_teams(inputs, emit):
     async def assess(key, draft):
         shared = {'slot': slots[key], 'stem': draft.stem, 'choices': [c.model_dump() for c in draft.choices]}
         solver = Agent(name='exam_blind_solver', model=_model(), output_schema=Solution, use_json_mode=True, telemetry=False,
-                       instructions=['Solve the supplied problem independently. You are not shown the author answer. Return JSON answer and explanation. Use choice labels when applicable.'])
+                       instructions=[prompts['blind-solver']])
         solution = parsed(Solution, (await solver.arun(json.dumps(shared, ensure_ascii=False))).content)
         reviewer = Agent(name='exam_slot_reviewer', model=_model(), output_schema=Decision, use_json_mode=True, telemetry=False,
-                         instructions=['Check the proposed problem, author answer and independent solution. Verify answer uniqueness, sufficient conditions, appropriate type and mathematical reasoning. Return accepted=false with actionable corrections when uncertain or incorrect. Do not rewrite the draft.', *REVIEW_RULES])
+                         instructions=[prompts['reviewer']])
         return parsed(Decision, (await reviewer.arun(json.dumps({**shared, 'author': draft.model_dump(), 'independent_solution': solution.model_dump()}, ensure_ascii=False))).content)
 
     def review_type(kind, keys):
