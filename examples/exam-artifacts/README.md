@@ -28,6 +28,8 @@ or only `exam.md` and `assets/diagram.svg`, not the entire bundle.
   PDF with Poppler; it is not a separately drawn approximation.
 - Model/user text, including LaTeX-like formulas, is escaped **literally**. This
   version does not interpret arbitrary math markup or compile supplied TeX.
+  A small fixed glyph mapping preserves supported Unicode subscripts and
+  superscripts in CJK PDFs even when the selected font has no matching glyph.
 - Markdown escapes HTML and arbitrary image/link syntax. Only the trusted relative
   SVG image is emitted. No remote resources or model executable code are used.
 - The artifact directory is atomically renamed into place only after all outputs

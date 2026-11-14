@@ -110,6 +110,17 @@ class ExamArtifactSafetyTests(unittest.TestCase):
         self.assertIn(r'\textbackslash{}input\{',docs['student.tex'])
         self.assertNotIn('<img',docs['exam.md']);self.assertNotIn('![remote](',docs['exam.md'])
         self.assertIn(r'\!\[remote\]\(',docs['exam.md']);self.assertIn('&lt;img',docs['exam.md'])
+    def test_unicode_indices_use_trusted_glyph_fallback(self):
+        from app.exam_artifacts import tex_text,render_documents
+        self.assertEqual(tex_text('x⁵+aₙ²'), r'x\textsuperscript{5}+a\textsubscript{n}\textsuperscript{2}')
+        self.assertEqual(tex_text('x⁻¹'), r'x\textsuperscript{-}\textsuperscript{1}')
+        self.assertEqual(tex_text('ₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ'), ''.join(r'\textsubscript{'+c+'}' for c in 'hijklmnoprstuvx'))
+        self.assertNotIn(r'\input{',tex_text('⁵'+r'\input{secret}'))
+        self.exam['sections'][0]['items'][0]['stem']='求(1+2x)⁵及aₙ的值。'
+        docs=render_documents(self.exam,None)
+        self.assertIn(r'\textsuperscript{5}',docs['student.tex'])
+        self.assertIn(r'\textsubscript{n}',docs['student.tex'])
+        self.assertIn('⁵',docs['exam.md']);self.assertIn('ₙ',docs['exam.md'])
     def test_same_tikz_source_and_student_answer_separation(self):
         from app.exam_artifacts import prepare_canonical,render_documents,tikz_fragment
         geometry={'template':'right_triangle_area_v1','section_id':'A','number':'1','base':3,'height':4}

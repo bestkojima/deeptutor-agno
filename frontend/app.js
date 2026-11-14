@@ -2,7 +2,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const state = {taskId: null, stream: null, seen: new Set(), questions: [], capabilities: [], busy: false};
-  const eventTypes = ['run.started', 'step.started', 'step.completed', 'tool.started', 'tool.completed', 'tool.failed', 'question', 'progress', 'step.failed', 'quiz.question', 'quiz.question.started', 'quiz.question.emitted', 'quiz.question.rejected', 'quiz.question.failed', 'quiz.completed', 'reader.located', 'research.parallel.started', 'research.parallel.completed', 'research.interrupted', 'research.checkpoint.reused', 'research.checkpoint.retained', 'video.revision.started', 'solve.review', 'result', 'error', 'run.completed'];
+  const eventTypes = ['run.started', 'step.started', 'step.completed', 'tool.started', 'tool.completed', 'tool.failed', 'question', 'progress', 'step.failed', 'quiz.question', 'quiz.question.started', 'quiz.question.emitted', 'quiz.question.rejected', 'quiz.question.failed', 'quiz.completed', 'reader.located', 'research.parallel.started', 'research.parallel.completed', 'research.interrupted', 'research.checkpoint.reused', 'research.checkpoint.retained', 'video.revision.started', 'solve.review', 'exam.team.started', 'exam.team.completed', 'exam.slot.started', 'exam.slot.retrying', 'exam.slot.accepted', 'exam.slot.failed', 'exam.delegation.started', 'exam.delegation.completed', 'result', 'error', 'run.completed'];
   const stringify = value => typeof value === 'string' ? value : JSON.stringify(value, null, 2);
   function fail(error) { $('request-error').textContent = error.message || String(error); }
   async function request(path, body) {
@@ -158,7 +158,7 @@
   function trace(event) {
     const row = document.createElement('li');
     if (/failed|error/.test(event.type)) row.className = 'failed';
-    else if (/completed|result/.test(event.type)) row.className = 'success';
+    else if (/completed|accepted|result/.test(event.type)) row.className = 'success';
     const title = document.createElement('div'); title.className = 'event-title';
     const label = document.createElement('span'); label.textContent = event.type + ((event.data?.tool || event.data?.name) ? ` · ${event.data.tool || event.data.name}` : '');
     const time = document.createElement('span'); time.className = 'event-time';

@@ -44,9 +44,17 @@ def resolve_artifact(artifact_id, filename):
 
 
 def tex_text(value):
-    """Escape *every* TeX metacharacter; intentional math input is literal too."""
+    """Escape TeX input, with trusted glyph fallbacks for Unicode indices.
+
+    These fixed one-character substitutions preserve visible notation when a
+    CJK font lacks e.g. superscript 5 or subscript n. They are not a TeX parser.
+    """
     escape={'\\':r'\textbackslash{}','{':r'\{','}':r'\}','$':r'\$','&':r'\&',
             '#':r'\#','%':r'\%','_':r'\_','^':r'\textasciicircum{}','~':r'\textasciitilde{}'}
+    for source, target in zip('⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱ', '0123456789+-=()ni'):
+        escape[source] = r'\textsuperscript{' + target + '}'
+    for source, target in zip('₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ', '0123456789+-=()aehijklmnoprstuvx'):
+        escape[source] = r'\textsubscript{' + target + '}'
     return ''.join(escape.get(c,c) if ord(c)>=32 else ' ' for c in str(value))
 
 

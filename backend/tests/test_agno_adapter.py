@@ -40,7 +40,7 @@ class AgnoWorkflowTests(unittest.TestCase):
                 content = TutorOutput(text='offline fixture', citations=citations, data=data)
             return SimpleNamespace(content=content)
         # Fail loudly if a regression bypasses the mocked Agent boundary.
-        with patch.dict(os.environ, {'OPENAI_API_KEY': 'offline-placeholder-not-a-secret'}), \
+        with patch.dict(os.environ, {'OPENAI_API_KEY': 'offline-placeholder-not-a-secret', 'AGNO_EXAM_MODE': 'legacy'}), \
              patch.object(Agent, 'run', respond), \
              patch('socket.socket.connect', side_effect=AssertionError('Network forbidden in offline smoke test')):
             result = run_agno(capability, inputs or {'prompt': 'test'}, lambda kind, data: events.append((kind, data)))

@@ -16,9 +16,11 @@
 | Immersive Reading | [字幕导入](../backend/app/source_ingestion.py) → [read_excerpt / locate_excerpt](../backend/app/agno_adapter.py) → [阅读界面](../frontend/reader.js) 高亮匹配的引文，并为受控媒体定位 | 不做原始素材的 OCR、ASR 或持久批注 |
 | Research | 提纲确认 → [research_evidence_stage](../backend/app/research_workflow.py) 并行取证 → [ResearchCheckpoint](../backend/app/research_checkpoint.py) 保存分支 → 合成与复核；中断后用原任务 ID 显式续跑 | 只有单服务进程的持久恢复；远程调用不保证恰好一次，引文匹配也不证明论点成立 |
 | Solve | [SolveState](../backend/app/solve_workflow.py) 管理规划、步骤和有限重规划 → [run_agno](../backend/app/agno_adapter.py) 求解与复核 | 并非形式化证明；求解步骤不跨重启恢复 |
-| Exam | [生成约束与校验](../backend/app/exam_blueprint.py) → [prepare_canonical / build_exam_artifacts](../backend/app/exam_artifacts.py) → 学生与答案 PDF、Markdown、TeX 和同一 TikZ 来源的 SVG | 自有能力。结构校验不保证数学正确或难度等价；暂不自动解析样卷 PDF、不接记忆；任意模型 TeX 不执行 |
+| Exam | [主编 Team → 题型 Team → 出题 Agent](exam-team-workflow.md) → [蓝图约束与校验](../backend/app/exam_blueprint.py) → [prepare_canonical / build_exam_artifacts](../backend/app/exam_artifacts.py) → 学生与答案 PDF、Markdown、TeX 和同一 TikZ 来源的 SVG | 自有能力。结构校验不保证数学正确或难度等价；暂不自动解析样卷 PDF、不接记忆；任意模型 TeX 不执行 |
 
 ## 怎么验收
+
+- [Exam 团队编排、轨迹及显式回退](exam-team-workflow.md)。
 
 - [最新实施验收和实测边界](implement-spec-results.md)：区分真实 Luna Chat Completions、离线工作流、实编译与实编码。
 - [Agno 升级与可选 Responses/high](agno-stable-upgrade.md)：仅对 Solve 求解和 Research 子题取证开启；原有默认路径不改。

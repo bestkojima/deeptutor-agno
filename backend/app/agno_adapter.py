@@ -88,6 +88,13 @@ def run_agno(capability: str, inputs: dict, emit: Callable[[str, dict], None], *
         from agno.workflow import Workflow, Step, StepInput, StepOutput, Loop, HumanReview
     except ImportError as exc:
         raise RuntimeError('Install backend requirements including agno==3.2.0 and openai') from exc
+    if capability == 'exam':
+        mode = os.getenv('AGNO_EXAM_MODE', 'teams')
+        if mode not in ('teams', 'legacy'):
+            raise ValueError('AGNO_EXAM_MODE must be teams or legacy')
+        if mode == 'teams':
+            from .exam_teams import run_exam_teams
+            return run_exam_teams(inputs, emit)
     if research_checkpoint is not None and (capability != 'research' or not inputs.get('confirmed_outline')):
         raise ValueError('Only confirmed research supports checkpoint resume')
     checkpoint_state = research_checkpoint.load() if research_checkpoint is not None else None
